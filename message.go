@@ -84,5 +84,5 @@ func (m *SignedMessage) Key() Ref {
 func (m *Message) Sign(k Key) *SignedMessage {
 	content, _ := Encode(m)
 	sig := base64.StdEncoding.EncodeToString(k.Sign(content)) + ".sig." + k.Curve
-	return &SignedMessage{Message: *m, sig}
+	return &SignedMessage{Message: *m, Signature: Signature(sig)}
 }

@@ -63,6 +63,7 @@ func TestSlurp(t *testing.T) {
 	}()
 
 	for m := range output {
+		fmt.Println(m)
 		err = f.AddMessage(m)
 		if err != nil {
 			t.Fatal(err)
