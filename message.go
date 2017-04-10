@@ -73,6 +73,12 @@ func (m *SignedMessage) Key() Ref {
 		return ""
 	}
 	buf, _ := Encode(m)
+	/*enc := RemoveUnsupported(charmap.ISO8859_1.NewEncoder())
+	buf, err := enc.Bytes(buf)
+	if err != nil {
+		panic(err)
+	}*/
+	buf = ToJSBinary(buf)
 	switch strings.ToLower(m.Hash) {
 	case "sha256":
 		hash := sha256.Sum256(buf)
