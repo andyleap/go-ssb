@@ -3,8 +3,10 @@ package ssb
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/boltdb/bolt"
 )
@@ -13,6 +15,10 @@ func itob(v int) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, uint64(v))
 	return b
+}
+
+func btoi(b []byte) int {
+	return int(binary.BigEndian.Uint64(b))
 }
 
 type FeedStore struct {
@@ -36,7 +42,9 @@ func OpenFeedStore(path string) (*FeedStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FeedStore{db: db, feeds: map[Ref]*Feed{}, Topic: NewMessageTopic()}, nil
+	fs := &FeedStore{db: db, feeds: map[Ref]*Feed{}, Topic: NewMessageTopic()}
+	go fs.HandleGraph()
+	return fs, nil
 }
 
 func (fs *FeedStore) GetFeed(feedID Ref) *Feed {
@@ -49,7 +57,7 @@ func (fs *FeedStore) GetFeed(feedID Ref) *Feed {
 		return nil
 	}
 	feed := &Feed{store: fs, ID: feedID, Topic: NewMessageTopic()}
-	feed.Topic.Register(fs.Topic.Send)
+	feed.Topic.Register(fs.Topic.Send, true)
 	fs.feeds[feedID] = feed
 	return feed
 }
@@ -101,4 +109,54 @@ func (f *Feed) Latest() (m *SignedMessage) {
 		return nil
 	})
 	return
+}
+
+var ErrLogClosed = errors.New("LogClosed")
+
+func (f *Feed) Log(seq int) chan *SignedMessage {
+	c := make(chan *SignedMessage, 10)
+	go func() {
+		liveChan := make(chan *SignedMessage, 10)
+		f.Topic.Register(liveChan, false)
+		err := f.store.db.View(func(tx *bolt.Tx) error {
+			FeedsBucket := tx.Bucket([]byte("feeds"))
+			if FeedsBucket == nil {
+				return nil
+			}
+			FeedBucket := FeedsBucket.Bucket([]byte(f.ID))
+			if FeedBucket == nil {
+				return nil
+			}
+			err := FeedBucket.ForEach(func(k, v []byte) error {
+				var m *SignedMessage
+				json.Unmarshal(v, &m)
+				if m.Sequence <= seq {
+					return nil
+				}
+				seq = m.Sequence
+				select {
+				case c <- m:
+				case <-time.After(100 * time.Millisecond):
+					close(c)
+					return ErrLogClosed
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return
+		}
+		for m := range liveChan {
+			if m.Sequence <= seq {
+				continue
+			}
+			seq = m.Sequence
+			c <- m
+		}
+	}()
+	return c
 }

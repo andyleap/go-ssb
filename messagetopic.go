@@ -4,12 +4,12 @@ import "sync"
 
 type MessageTopic struct {
 	lock  sync.Mutex
-	recps map[chan<- *SignedMessage]struct{}
+	recps map[chan *SignedMessage]bool
 	Send  chan *SignedMessage
 }
 
 func NewMessageTopic() *MessageTopic {
-	mt := &MessageTopic{Send: make(chan *SignedMessage, 10), recps: map[chan<- *SignedMessage]struct{}{}}
+	mt := &MessageTopic{Send: make(chan *SignedMessage, 10), recps: map[chan *SignedMessage]bool{}}
 	go mt.process()
 	return mt
 }
@@ -19,16 +19,20 @@ func (mt *MessageTopic) Close() {
 }
 
 func (mt *MessageTopic) process() {
-	for m := range mt.send {
+	for m := range mt.Send {
 		func() {
 			mt.lock.Lock()
 			defer mt.lock.Unlock()
-			for recp := range mt.recps {
-				select {
-				case recp <- m:
-				default:
-					delete(mt.recps, recp)
-					close(recp)
+			for recp, strict := range mt.recps {
+				if strict {
+					recp <- m
+				} else {
+					select {
+					case recp <- m:
+					default:
+						delete(mt.recps, recp)
+						close(recp)
+					}
 				}
 			}
 		}()
@@ -42,13 +46,17 @@ func (mt *MessageTopic) process() {
 	}
 }
 
-func (mt *MessageTopic) Register(recp chan<- *SignedMessage) {
+func (mt *MessageTopic) Register(recp chan *SignedMessage, strict bool) chan *SignedMessage {
 	mt.lock.Lock()
 	defer mt.lock.Unlock()
-	mt.recps[recp] = struct{}{}
+	if recp == nil {
+		recp = make(chan *SignedMessage, 10)
+	}
+	mt.recps[recp] = strict
+	return recp
 }
 
-func (mt *MessageTopic) Unregister(recp chan<- *SignedMessage) {
+func (mt *MessageTopic) Unregister(recp chan *SignedMessage) {
 	mt.lock.Lock()
 	defer mt.lock.Unlock()
 

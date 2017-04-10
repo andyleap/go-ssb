@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cryptix/go-muxrpc"
 	"github.com/cryptix/secretstream"
@@ -45,7 +46,7 @@ func TestSlurp(t *testing.T) {
 	output := make(chan *SignedMessage)
 
 	fmt.Println("@" + base64.StdEncoding.EncodeToString(localKey.Public[:]) + ".ed25519")
-
+	os.Remove("feeds.db")
 	feedstore, _ := OpenFeedStore("feeds.db")
 	f := feedstore.GetFeed(Ref("@" + base64.StdEncoding.EncodeToString(localKey.Public[:]) + ".ed25519"))
 
@@ -69,4 +70,38 @@ func TestSlurp(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	time.Sleep(1 * time.Second)
+	follows := feedstore.GetFollows(Ref("@"+base64.StdEncoding.EncodeToString(localKey.Public[:])+".ed25519"), 1)
+
+	for followed := range follows {
+		output := make(chan *SignedMessage)
+		f := feedstore.GetFeed(followed)
+
+		seq := 0
+
+		latest := f.Latest()
+
+		if latest != nil {
+			seq = latest.Sequence + 1
+		}
+
+		go func() {
+			client.Source("createHistoryStream", output, map[string]interface{}{"id": followed, "keys": false, "seq": seq}, 0, false)
+			close(output)
+		}()
+
+		for m := range output {
+			fmt.Println(m)
+			err = f.AddMessage(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+	}
+
+	time.Sleep(1 * time.Second)
+
+	follows = feedstore.GetFollows(Ref("@"+base64.StdEncoding.EncodeToString(localKey.Public[:])+".ed25519"), 2)
+	fmt.Println(follows)
 }
