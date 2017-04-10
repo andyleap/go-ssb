@@ -61,19 +61,21 @@ func (r Ref) Algo() RefAlgo {
 	return RefAlgoInvalid
 }
 
-func (r Ref) Raw() string {
-	return strings.Split(strings.TrimLeft(string(r), "@%&"), ".")[0]
+func (r Ref) Raw() []byte {
+	b64 := strings.Split(strings.TrimLeft(string(r), "@%&"), ".")[0]
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil
+	}
+
+	return raw
 }
 
 func (r Ref) CheckHash(content []byte) error {
 	switch r.Algo() {
 	case RefAlgoSha256:
-		rawhash, err := base64.StdEncoding.DecodeString(r.Raw())
-		if err != nil {
-			return err
-		}
 		contentHash := sha256.Sum256(content)
-		if bytes.Equal(rawhash, contentHash[:]) {
+		if bytes.Equal(r.Raw(), contentHash[:]) {
 			return nil
 		}
 		return ErrInvalidHash
@@ -102,26 +104,29 @@ func (s Signature) Algo() SigAlgo {
 	return SigAlgoInvalid
 }
 
-func (s Signature) Raw() string {
-	return strings.Split(string(s), ".")[0]
+func (s Signature) Raw() []byte {
+	b64 := strings.Split(string(s), ".")[0]
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil
+	}
+
+	return raw
 }
 
 func (s Signature) Verify(content []byte, r Ref) error {
 	switch s.Algo() {
 	case SigAlgoEd25519:
-		rawsig, err := base64.StdEncoding.DecodeString(s.Raw())
-		if err != nil {
-			return err
-		}
 		if r.Algo() != RefAlgoEd25519 {
 			return ErrInvalidSig
 		}
-		rawkey, err := base64.StdEncoding.DecodeString(r.Raw())
-		if err != nil {
-			return err
+		rawkey := r.Raw()
+		if rawkey == nil {
+			return nil
 		}
+
 		key := ed25519.PublicKey(rawkey)
-		if ed25519.Verify(key, content, rawsig) {
+		if ed25519.Verify(key, content, s.Raw()) {
 			return nil
 		}
 		return ErrInvalidSig
