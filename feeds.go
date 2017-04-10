@@ -20,11 +20,15 @@ type FeedStore struct {
 
 	feedlock sync.Mutex
 	feeds    map[Ref]*Feed
+
+	Topic *MessageTopic
 }
 
 type Feed struct {
 	store *FeedStore
 	ID    Ref
+
+	Topic *MessageTopic
 }
 
 func OpenFeedStore(path string) (*FeedStore, error) {
@@ -32,7 +36,7 @@ func OpenFeedStore(path string) (*FeedStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FeedStore{db: db, feeds: map[Ref]*Feed{}}, nil
+	return &FeedStore{db: db, feeds: map[Ref]*Feed{}, Topic: NewMessageTopic()}, nil
 }
 
 func (fs *FeedStore) GetFeed(feedID Ref) *Feed {
@@ -44,7 +48,8 @@ func (fs *FeedStore) GetFeed(feedID Ref) *Feed {
 	if feedID.Type() != RefFeed {
 		return nil
 	}
-	feed := &Feed{store: fs, ID: feedID}
+	feed := &Feed{store: fs, ID: feedID, Topic: NewMessageTopic()}
+	feed.Topic.Register(fs.Topic.Send)
 	fs.feeds[feedID] = feed
 	return feed
 }
@@ -76,6 +81,7 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 	if err != nil {
 		return err
 	}
+	f.Topic.Send <- m
 	return nil
 }
 
