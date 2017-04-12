@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 
 	"golang.org/x/crypto/ed25519"
@@ -54,10 +55,25 @@ const (
 )
 
 var (
+	ErrInvalidRefType = errors.New("Invalid Ref Type")
 	ErrInvalidRefAlgo = errors.New("Invalid Ref Algo")
 	ErrInvalidSig     = errors.New("Invalid Signature")
 	ErrInvalidHash    = errors.New("Invalid Hash")
 )
+
+func NewRef(typ RefType, algo RefAlgo, raw []byte) (Ref, error) {
+	if algo != RefAlgoSha256 {
+		return "", ErrInvalidRefAlgo
+	}
+
+	if typ == RefInvalid {
+		return "", ErrInvalidRefType
+	}
+
+	b64 := base64.StdEncoding.EncodeToString(raw)
+
+	return Ref(fmt.Sprintf("%s%s.%s", typ, b64, algo)), nil
+}
 
 func (r Ref) Type() RefType {
 	switch r[0] {
