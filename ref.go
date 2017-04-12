@@ -14,6 +14,19 @@ type Ref string
 
 type RefType int
 
+func (rt RefType) String() string {
+	switch rt {
+	case RefFeed:
+		return "@"
+	case RefMessage:
+		return "%"
+	case RefBlob:
+		return "&"
+	default:
+		return "?"
+	}
+}
+
 const (
 	RefInvalid RefType = iota
 	RefFeed
@@ -22,6 +35,17 @@ const (
 )
 
 type RefAlgo int
+
+func (ra RefAlgo) String() string {
+	switch ra {
+	case RefAlgoSha256:
+		return "sha256"
+	case RefAlgoEd25519:
+		return "ed25519"
+	default:
+		return "???"
+	}
+}
 
 const (
 	RefAlgoInvalid RefAlgo = iota
