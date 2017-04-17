@@ -14,7 +14,7 @@ type Link struct {
 
 type Post struct {
 	MessageBody
-	Test     string `json:"text"`
+	Text     string `json:"text"`
 	Channel  string `json:"channel,omitempty"`
 	Root     Ref    `json:"root,omitempty"`
 	Branch   Ref    `json:"branch,omitempty"`
@@ -45,16 +45,18 @@ type Vote struct {
 	} `json:"vote"`
 }
 
-type Pub struct {
-	MessageBody
-	Pub struct {
-		Link Ref    `json:"link"`
-		Host string `json:"host"`
-		Port int    `json:"port"`
-	} `json:"pub"`
+type PubData struct {
+	Link Ref    `json:"link"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
-func (m *Message) DecodeMessage() (mb interface{}) {
+type Pub struct {
+	MessageBody
+	Pub PubData `json:"pub"`
+}
+
+func (m *Message) DecodeMessage() (t string, mb interface{}) {
 	Type := MessageBody{}
 	json.Unmarshal(m.Content, &Type)
 	switch Type.Type {
@@ -69,6 +71,7 @@ func (m *Message) DecodeMessage() (mb interface{}) {
 	case "pub":
 		mb = &Pub{}
 	}
+	t = Type.Type
 	json.Unmarshal(m.Content, &mb)
 	return
 }

@@ -12,42 +12,44 @@ type Relation struct {
 	Blocking  bool
 }
 
-func (fs *FeedStore) HandleGraph() {
+func (fs *DataStore) HandleGraph() {
 	c := fs.Topic.Register(nil, true)
 
-	for m := range c {
-		mb := m.DecodeMessage()
-		if mbc, ok := mb.(*Contact); ok {
-			fmt.Println(mbc)
-			fs.db.Update(func(tx *bolt.Tx) error {
-				GraphBucket, err := tx.CreateBucketIfNotExists([]byte("graph"))
-				if err != nil {
-					return err
-				}
-				FeedBucket, err := GraphBucket.CreateBucketIfNotExists([]byte(m.Author))
-				var r Relation
-				json.Unmarshal(FeedBucket.Get([]byte(mbc.Contact)), &r)
-				if err != nil {
-					return err
-				}
-				if mbc.Following != nil {
-					r.Following = *mbc.Following
-				}
-				if mbc.Blocking != nil {
-					r.Blocking = *mbc.Blocking
-				}
-				buf, _ := json.Marshal(r)
-				err = FeedBucket.Put([]byte(mbc.Contact), buf)
-				if err != nil {
-					return err
-				}
-				return nil
-			})
+	go func() {
+		for m := range c {
+			_, mb := m.DecodeMessage()
+			if mbc, ok := mb.(*Contact); ok {
+				fmt.Println(mbc)
+				fs.db.Update(func(tx *bolt.Tx) error {
+					GraphBucket, err := tx.CreateBucketIfNotExists([]byte("graph"))
+					if err != nil {
+						return err
+					}
+					FeedBucket, err := GraphBucket.CreateBucketIfNotExists([]byte(m.Author))
+					var r Relation
+					json.Unmarshal(FeedBucket.Get([]byte(mbc.Contact)), &r)
+					if err != nil {
+						return err
+					}
+					if mbc.Following != nil {
+						r.Following = *mbc.Following
+					}
+					if mbc.Blocking != nil {
+						r.Blocking = *mbc.Blocking
+					}
+					buf, _ := json.Marshal(r)
+					err = FeedBucket.Put([]byte(mbc.Contact), buf)
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+			}
 		}
-	}
+	}()
 }
 
-func (fs *FeedStore) GetFollows(feed Ref, depth int) (follows map[Ref]int) {
+func (fs *DataStore) GetFollows(feed Ref, depth int) (follows map[Ref]int) {
 	follows = map[Ref]int{}
 	follows[feed] = 0
 	fs.db.View(func(tx *bolt.Tx) error {

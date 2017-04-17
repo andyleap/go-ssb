@@ -18,7 +18,7 @@ type Message struct {
 	Previous  *Ref            `json:"previous"`
 	Author    Ref             `json:"author"`
 	Sequence  int             `json:"sequence"`
-	Timestamp int             `json:"timestamp"`
+	Timestamp float64         `json:"timestamp"`
 	Hash      string          `json:"hash"`
 	Content   json.RawMessage `json:"content"`
 }
@@ -63,9 +63,9 @@ func (m *SignedMessage) Verify(f *Feed) error {
 	return nil
 }
 
-func (m *SignedMessage) Encode() string {
+func (m *SignedMessage) Encode() []byte {
 	buf, _ := Encode(m)
-	return string(buf)
+	return buf
 }
 
 func (m *SignedMessage) Key() Ref {
@@ -87,8 +87,8 @@ func (m *SignedMessage) Key() Ref {
 	return ""
 }
 
-func (m *Message) Sign(k Key) *SignedMessage {
+func (m *Message) Sign(s Signer) *SignedMessage {
 	content, _ := Encode(m)
-	sig := base64.StdEncoding.EncodeToString(k.Sign(content)) + ".sig." + k.Curve
-	return &SignedMessage{Message: *m, Signature: Signature(sig)}
+	sig := s.Sign(content)
+	return &SignedMessage{Message: *m, Signature: sig}
 }

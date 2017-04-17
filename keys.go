@@ -1,22 +1,19 @@
 package ssb
 
-import "golang.org/x/crypto/ed25519"
+import (
+	"encoding/base64"
 
-type Key struct {
-	Curve  string
-	ID     string
-	Signer `json:"-"`
-}
+	"golang.org/x/crypto/ed25519"
+)
 
 type Signer interface {
-	Sign([]byte) []byte
+	Sign([]byte) Signature
 }
 
 type SignerEd25519 struct {
-	Public  ed25519.PublicKey
 	Private ed25519.PrivateKey
 }
 
-func (k SignerEd25519) Sign(content []byte) []byte {
-	return ed25519.Sign(k.Private, content)
+func (k SignerEd25519) Sign(content []byte) Signature {
+	return Signature(base64.StdEncoding.EncodeToString(ed25519.Sign(k.Private, content)) + ".sig.ed25519")
 }
