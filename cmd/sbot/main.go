@@ -1,14 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/cmd/sbot/rpc"
+	"github.com/andyleap/go-ssb/gossip"
+	"github.com/andyleap/go-ssb/graph"
 
 	r "net/rpc"
 
@@ -19,6 +19,7 @@ var datastore *ssb.DataStore
 
 func main() {
 	datastore, _ = ssb.OpenDataStore("feeds.db", "secret.json")
+	gossip.Replicate(datastore)
 
 	bi := boltinspect.New(datastore.DB())
 
@@ -44,7 +45,7 @@ type Gossip struct {
 }
 
 func (g *Gossip) AddPub(req rpc.AddPubReq, res *rpc.AddPubRes) error {
-	g.ds.AddPub(ssb.PubData{
+	gossip.AddPub(g.ds, gossip.Pub{
 		Host: req.Host,
 		Port: req.Port,
 		Link: ssb.Ref(req.PubKey),
@@ -70,36 +71,11 @@ func (f *Feed) Post(req rpc.PostReq, res *rpc.PostRes) error {
 	post.Root = ssb.Ref(req.Root)
 	post.Type = "post"
 
-	content, _ := json.Marshal(post)
-
-	m := &ssb.Message{
-		Author:    feed.ID,
-		Timestamp: float64(time.Now().UnixNano() / int64(time.Millisecond)),
-		Hash:      "sha256",
-		Content:   content,
-		Sequence:  1,
-	}
-
-	if l := feed.Latest(); l != nil {
-		key := l.Key()
-		m.Previous = &key
-		m.Sequence = l.Sequence + 1
-		for m.Timestamp <= l.Timestamp {
-			m.Timestamp += 0.01
-		}
-	}
-
-	signer := f.ds.Keys[feed.ID]
-	if signer == nil {
-		return nil
-	}
-	sm := m.Sign(signer)
-
-	err := feed.AddMessage(sm)
+	err := feed.PublishMessage(post)
 	if err != nil {
 		log.Println(err)
 	} else {
-		log.Println("Message ", sm, " posted to feed ", feed.ID)
+		log.Println("Message ", post, " posted to feed ", feed.ID)
 	}
 
 	return nil
@@ -111,43 +87,40 @@ func (f *Feed) Follow(req rpc.FollowReq, res *rpc.FollowRes) error {
 	}
 	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
 
-	follow := &ssb.Contact{}
+	follow := &graph.Contact{}
 
 	following := true
 	follow.Following = &following
 	follow.Contact = ssb.Ref(req.Contact)
 	follow.Type = "contact"
 
-	content, _ := json.Marshal(follow)
-
-	m := &ssb.Message{
-		Author:    feed.ID,
-		Timestamp: float64(time.Now().UnixNano() / int64(time.Millisecond)),
-		Hash:      "sha256",
-		Content:   content,
-		Sequence:  1,
-	}
-
-	if l := feed.Latest(); l != nil {
-		key := l.Key()
-		m.Previous = &key
-		m.Sequence = l.Sequence + 1
-		for m.Timestamp <= l.Timestamp {
-			m.Timestamp += 0.01
-		}
-	}
-
-	signer := f.ds.Keys[feed.ID]
-	if signer == nil {
-		return nil
-	}
-	sm := m.Sign(signer)
-
-	err := feed.AddMessage(sm)
+	err := feed.PublishMessage(follow)
 	if err != nil {
 		log.Println(err)
 	} else {
-		log.Println("Message ", sm, " posted to feed ", feed.ID)
+		log.Println("Message ", follow, " posted to feed ", feed.ID)
+	}
+
+	return nil
+}
+
+func (f *Feed) About(req rpc.AboutReq, res *rpc.AboutRes) error {
+	if req.Feed == "" {
+		req.Feed = string(f.ds.PrimaryRef)
+	}
+	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
+
+	about := &ssb.About{}
+
+	about.Name = req.Name
+	about.About = feed.ID
+	about.Type = "about"
+
+	err := feed.PublishMessage(about)
+	if err != nil {
+		log.Println(err)
+	} else {
+		log.Println("Message ", about, " posted to feed ", feed.ID)
 	}
 
 	return nil

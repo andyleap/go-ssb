@@ -8,6 +8,8 @@ type MessageBody struct {
 	Type string `json:"type"`
 }
 
+var MessageTypes = map[string]func() interface{}{}
+
 type Link struct {
 	Link Ref `json:"link"`
 }
@@ -29,13 +31,6 @@ type About struct {
 	Image Ref    `json:"image,omitempty"`
 }
 
-type Contact struct {
-	MessageBody
-	Contact   Ref   `json:"contact"`
-	Following *bool `json:"following,omitempty"`
-	Blocking  *bool `json:"blocking,omitempty"`
-}
-
 type Vote struct {
 	MessageBody
 	Vote struct {
@@ -45,31 +40,11 @@ type Vote struct {
 	} `json:"vote"`
 }
 
-type PubData struct {
-	Link Ref    `json:"link"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-}
-
-type Pub struct {
-	MessageBody
-	Pub PubData `json:"pub"`
-}
-
 func (m *Message) DecodeMessage() (t string, mb interface{}) {
 	Type := MessageBody{}
 	json.Unmarshal(m.Content, &Type)
-	switch Type.Type {
-	case "post":
-		mb = &Post{}
-	case "about":
-		mb = &About{}
-	case "contact":
-		mb = &Contact{}
-	case "vote":
-		mb = &Vote{}
-	case "pub":
-		mb = &Pub{}
+	if mf, ok := MessageTypes[Type.Type]; ok {
+		mb = mf()
 	}
 	t = Type.Type
 	json.Unmarshal(m.Content, &mb)

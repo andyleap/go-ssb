@@ -1,2 +1,3 @@
 *.exe
 /secret.json
+/feeds.db.lock

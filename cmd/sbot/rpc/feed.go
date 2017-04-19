@@ -20,3 +20,12 @@ type FollowReq struct {
 type FollowRes struct {
 	Err error
 }
+
+type AboutReq struct {
+	Feed string
+	Name string
+}
+
+type AboutRes struct {
+	Err error
+}

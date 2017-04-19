@@ -98,6 +98,28 @@ func main() {
 				return client.Call("Feed.Follow", req, &res)
 			},
 		},
+		{
+			Name:    "feed.name",
+			Aliases: []string{"f.n"},
+			Usage:   "set a name for the feed",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "feed",
+					Usage: "Feed to publish to",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				if c.NArg() != 1 {
+					return fmt.Errorf("Expected 1 argument")
+				}
+				req := rpc.AboutReq{
+					Feed: c.String("feed"),
+					Name: c.Args().Get(0),
+				}
+				res := rpc.AboutRes{}
+				return client.Call("Feed.About", req, &res)
+			},
+		},
 	}
 	app.Run(os.Args)
 }

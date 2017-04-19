@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/cryptix/go-muxrpc"
 	"github.com/cryptix/secretstream/secrethandshake"
 	"golang.org/x/crypto/ed25519"
 )
@@ -36,9 +35,22 @@ type DataStore struct {
 	PrimaryKey *secrethandshake.EdKeyPair
 	PrimaryRef Ref
 
-	conns map[Ref]*muxrpc.Client
+	extraData     map[string]interface{}
+	extraDataLock sync.Mutex
 
 	Keys map[Ref]Signer
+}
+
+func (ds *DataStore) ExtraData(name string) interface{} {
+	ds.extraDataLock.Lock()
+	defer ds.extraDataLock.Unlock()
+	return ds.extraData[name]
+}
+
+func (ds *DataStore) SetExtraData(name string, data interface{}) {
+	ds.extraDataLock.Lock()
+	defer ds.extraDataLock.Unlock()
+	ds.extraData[name] = data
 }
 
 func (ds *DataStore) DB() *bolt.DB {
@@ -58,17 +70,15 @@ func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
 		return nil, err
 	}
 	ds := &DataStore{
-		db:    db,
-		feeds: map[Ref]*Feed{},
-		Topic: NewMessageTopic(),
-		conns: map[Ref]*muxrpc.Client{},
-		Keys:  map[Ref]Signer{},
+		db:        db,
+		feeds:     map[Ref]*Feed{},
+		Topic:     NewMessageTopic(),
+		extraData: map[string]interface{}{},
+		Keys:      map[Ref]Signer{},
 	}
 	ds.PrimaryKey, _ = secrethandshake.LoadSSBKeyPair(primaryKey)
 	ds.PrimaryRef = Ref("@" + base64.StdEncoding.EncodeToString(ds.PrimaryKey.Public[:]) + ".ed25519")
 	ds.Keys[Ref("@"+base64.StdEncoding.EncodeToString(ds.PrimaryKey.Public[:])+".ed25519")] = &SignerEd25519{ed25519.PrivateKey(ds.PrimaryKey.Secret[:])}
-	ds.HandleGraph()
-	ds.HandlePubs()
 	return ds, nil
 }
 
@@ -86,6 +96,8 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 	ds.feeds[feedID] = feed
 	return feed
 }
+
+var AddMessageHooks = map[string]func(m *SignedMessage, tx *bolt.Tx) error{}
 
 func (f *Feed) AddMessage(m *SignedMessage) error {
 	if m.Author != f.ID {
@@ -118,12 +130,50 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 			return err
 		}
 		LogBucket.Put(itob(int(seq)), []byte(m.Key()))
+		for _, hook := range AddMessageHooks {
+			hook(m, tx)
+		}
+
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 	f.Topic.Send <- m
+	return nil
+}
+
+func (f *Feed) PublishMessage(body interface{}) error {
+	content, _ := json.Marshal(body)
+
+	m := &Message{
+		Author:    f.ID,
+		Timestamp: float64(time.Now().UnixNano() / int64(time.Millisecond)),
+		Hash:      "sha256",
+		Content:   content,
+		Sequence:  1,
+	}
+
+	if l := f.Latest(); l != nil {
+		key := l.Key()
+		m.Previous = &key
+		m.Sequence = l.Sequence + 1
+		for m.Timestamp <= l.Timestamp {
+			m.Timestamp += 0.01
+		}
+	}
+
+	signer := f.store.Keys[f.ID]
+	if signer == nil {
+		return fmt.Errorf("Cannot sign message without signing key for feed")
+	}
+	sm := m.Sign(signer)
+
+	err := f.AddMessage(sm)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
