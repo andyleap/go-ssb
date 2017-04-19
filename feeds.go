@@ -113,6 +113,7 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 			return err
 		}
 		FeedBucket, err := FeedsBucket.CreateBucketIfNotExists([]byte(f.ID))
+		FeedBucket.FillPercent = 1
 		if err != nil {
 			return err
 		}
@@ -122,6 +123,7 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 		}
 		FeedBucket.Put(itob(m.Sequence), buf)
 		LogBucket, err := tx.CreateBucketIfNotExists([]byte("log"))
+		LogBucket.FillPercent = 1
 		if err != nil {
 			return err
 		}
@@ -130,10 +132,17 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 			return err
 		}
 		LogBucket.Put(itob(int(seq)), []byte(m.Key()))
-		for _, hook := range AddMessageHooks {
-			hook(m, tx)
+		OwnerBucket, err := tx.CreateBucketIfNotExists([]byte("owner"))
+		if err != nil {
+			return err
 		}
-
+		OwnerBucket.Put([]byte(m.Key()), []byte(m.Author))
+		for _, hook := range AddMessageHooks {
+			err = hook(m, tx)
+			if err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
