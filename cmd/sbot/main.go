@@ -6,10 +6,12 @@ import (
 	"net/http"
 
 	"github.com/andyleap/go-ssb"
+	_ "github.com/andyleap/go-ssb/channels"
 	"github.com/andyleap/go-ssb/cmd/sbot/rpc"
 	_ "github.com/andyleap/go-ssb/git"
 	"github.com/andyleap/go-ssb/gossip"
 	"github.com/andyleap/go-ssb/graph"
+	"github.com/andyleap/go-ssb/social"
 
 	r "net/rpc"
 
@@ -27,6 +29,7 @@ func main() {
 	http.HandleFunc("/bolt", bi.InspectEndpoint)
 
 	http.HandleFunc("/", Index)
+	http.HandleFunc("/channel", Channel)
 
 	go http.ListenAndServe(":9823", nil)
 
@@ -64,7 +67,7 @@ func (f *Feed) Post(req rpc.PostReq, res *rpc.PostRes) error {
 	}
 	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
 
-	post := &ssb.Post{}
+	post := &social.Post{}
 
 	post.Text = req.Text
 	post.Channel = req.Channel
@@ -111,7 +114,7 @@ func (f *Feed) About(req rpc.AboutReq, res *rpc.AboutRes) error {
 	}
 	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
 
-	about := &ssb.About{}
+	about := &social.About{}
 
 	about.Name = req.Name
 	about.About = feed.ID

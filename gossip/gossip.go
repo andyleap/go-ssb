@@ -155,7 +155,7 @@ func GetPubs(ds *ssb.DataStore) (pds []*Pub) {
 }
 
 func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
-	muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
+	/*muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
 		params := struct {
 			Id   ssb.Ref `json:"id"`
 			Seq  int     `json:"seq"`
@@ -170,16 +170,18 @@ func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
 		f := ds.GetFeed(params.Id)
 		if f.ID == ds.PrimaryRef {
 			fmt.Println(params)
+			fmt.Println(string(rm))
 		}
 		c := make(chan interface{})
 		go func() {
 			for m := range f.Log(params.Seq, params.Live) {
+				fmt.Println("Sending", m.Author, m.Sequence)
 				c <- m
 			}
 			close(c)
 		}()
 		return c
-	})
+	})*/
 
 	go func() {
 		i := 0

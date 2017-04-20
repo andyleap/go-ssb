@@ -64,6 +64,11 @@ type Feed struct {
 	Topic *MessageTopic
 }
 
+type Pointer struct {
+	Author   Ref
+	Sequence int
+}
+
 func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
 	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
@@ -97,6 +102,45 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 	return feed
 }
 
+func (ds *DataStore) Get(tx *bolt.Tx, post Ref) (m *SignedMessage) {
+	var err error
+	if tx == nil {
+		tx, err = ds.db.Begin(false)
+		if err != nil {
+			return
+		}
+		defer tx.Commit()
+	}
+	PointerBucket := tx.Bucket([]byte("pointer"))
+	if PointerBucket == nil {
+		return
+	}
+	pdata := PointerBucket.Get([]byte(post))
+	if pdata == nil {
+		return
+	}
+	p := Pointer{}
+	json.Unmarshal(pdata, &p)
+	FeedsBucket := tx.Bucket([]byte("feeds"))
+	if FeedsBucket == nil {
+		return
+	}
+	FeedBucket := FeedsBucket.Bucket([]byte(p.Author))
+	if FeedBucket == nil {
+		return
+	}
+	LogBucket := FeedBucket.Bucket([]byte("log"))
+	if LogBucket == nil {
+		return
+	}
+	msgdata := LogBucket.Get(itob(p.Sequence))
+	if msgdata == nil {
+		return
+	}
+	json.Unmarshal(msgdata, &m)
+	return
+}
+
 var AddMessageHooks = map[string]func(m *SignedMessage, tx *bolt.Tx) error{}
 
 func (f *Feed) AddMessage(m *SignedMessage) error {
@@ -113,7 +157,15 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 			return err
 		}
 		FeedBucket, err := FeedsBucket.CreateBucketIfNotExists([]byte(f.ID))
-		FeedBucket.FillPercent = 1
+		if err != nil {
+			return err
+		}
+		FeedLogBucket, err := FeedBucket.CreateBucketIfNotExists([]byte("log"))
+		if err != nil {
+			return err
+		}
+		FeedLogBucket.FillPercent = 1
+		seq, err := FeedLogBucket.NextSequence()
 		if err != nil {
 			return err
 		}
@@ -121,22 +173,24 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 		if err != nil {
 			return err
 		}
-		FeedBucket.Put(itob(m.Sequence), buf)
+		FeedLogBucket.Put(itob(m.Sequence), buf)
 		LogBucket, err := tx.CreateBucketIfNotExists([]byte("log"))
 		LogBucket.FillPercent = 1
 		if err != nil {
 			return err
 		}
-		seq, err := LogBucket.NextSequence()
+		seq, err = LogBucket.NextSequence()
 		if err != nil {
 			return err
 		}
 		LogBucket.Put(itob(int(seq)), []byte(m.Key()))
-		OwnerBucket, err := tx.CreateBucketIfNotExists([]byte("owner"))
+		PointerBucket, err := tx.CreateBucketIfNotExists([]byte("pointer"))
 		if err != nil {
 			return err
 		}
-		OwnerBucket.Put([]byte(m.Key()), []byte(m.Author))
+		pointer := Pointer{Author: m.Author, Sequence: m.Sequence}
+		buf, _ = json.Marshal(pointer)
+		PointerBucket.Put([]byte(m.Key()), buf)
 		for _, hook := range AddMessageHooks {
 			err = hook(m, tx)
 			if err != nil {
@@ -196,7 +250,11 @@ func (f *Feed) Latest() (m *SignedMessage) {
 		if FeedBucket == nil {
 			return nil
 		}
-		cur := FeedBucket.Cursor()
+		FeedLogBucket := FeedBucket.Bucket([]byte("log"))
+		if FeedLogBucket == nil {
+			return nil
+		}
+		cur := FeedLogBucket.Cursor()
 		_, val := cur.Last()
 		json.Unmarshal(val, &m)
 		return nil
@@ -233,7 +291,7 @@ func (f *Feed) Log(seq int, live bool) chan *SignedMessage {
 				seq = m.Sequence
 				select {
 				case c <- m:
-				case <-time.After(100 * time.Millisecond):
+				case <-time.After(1000 * time.Millisecond):
 					close(c)
 					return ErrLogClosed
 				}
