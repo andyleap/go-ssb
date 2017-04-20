@@ -67,9 +67,26 @@ type ExtraData struct {
 func Replicate(ds *ssb.DataStore) {
 	ed := &ExtraData{conns: map[ssb.Ref]*muxrpc.Client{}}
 	ds.SetExtraData("gossip", ed)
-
+	sbotAppKey, _ := base64.StdEncoding.DecodeString("1KHLiKZvAvjbY1ziZEHMXawbCEIM6qwjCDm3VYRan/s=")
 	go func() {
-		sbotAppKey, _ := base64.StdEncoding.DecodeString("1KHLiKZvAvjbY1ziZEHMXawbCEIM6qwjCDm3VYRan/s=")
+		sss, _ := secretstream.NewServer(*ds.PrimaryKey, sbotAppKey)
+		l, err := sss.Listen("tcp", ":8008")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Println("New connection from:", conn.RemoteAddr())
+			muxConn := muxrpc.NewClient(log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)), conn)
+			go HandleConn(ds, muxConn)
+		}
+	}()
+	go func() {
 		ssc, _ := secretstream.NewClient(*ds.PrimaryKey, sbotAppKey)
 		pubList := GetPubs(ds)
 		t := time.NewTicker(10 * time.Second)
@@ -106,65 +123,15 @@ func Replicate(ds *ssb.DataStore) {
 					fmt.Println(err)
 					return
 				}
-
 				muxConn := muxrpc.NewClient(log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)), conn)
 
 				ed.conns[pub.Link] = muxConn
-
-				muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
-					params := struct {
-						Id   ssb.Ref `json:"id"`
-						Seq  int     `json:"seq"`
-						Live bool    `json:"live"`
-					}{
-						"",
-						0,
-						false,
-					}
-					args := []interface{}{&params}
-					json.Unmarshal(rm, &args)
-					f := ds.GetFeed(params.Id)
-					if f.ID == ds.PrimaryRef {
-						fmt.Println(params)
-					}
-					c := make(chan interface{})
-					go func() {
-						for m := range f.Log(params.Seq, params.Live) {
-							c <- m
-						}
-						close(c)
-					}()
-					return c
-				})
-
 				go func() {
-					muxConn.Handle()
+					HandleConn(ds, muxConn)
 					ed.lock.Lock()
 					defer ed.lock.Unlock()
 					delete(ed.conns, pub.Link)
 				}()
-
-				for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
-					go func(feed ssb.Ref) {
-						reply := make(chan *ssb.SignedMessage)
-						f := ds.GetFeed(feed)
-						seq := 0
-						if f.Latest() != nil {
-							seq = f.Latest().Sequence + 1
-						}
-						fmt.Println("Asking for ", f.ID, seq)
-						go func() {
-							err := muxConn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
-							if err != nil {
-								fmt.Println(err)
-							}
-							close(reply)
-						}()
-						for m := range reply {
-							f.AddMessage(m)
-						}
-					}(feed)
-				}
 			}()
 		}
 	}()
@@ -185,4 +152,60 @@ func GetPubs(ds *ssb.DataStore) (pds []*Pub) {
 		return nil
 	})
 	return
+}
+
+func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
+	muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
+		params := struct {
+			Id   ssb.Ref `json:"id"`
+			Seq  int     `json:"seq"`
+			Live bool    `json:"live"`
+		}{
+			"",
+			0,
+			false,
+		}
+		args := []interface{}{&params}
+		json.Unmarshal(rm, &args)
+		f := ds.GetFeed(params.Id)
+		if f.ID == ds.PrimaryRef {
+			fmt.Println(params)
+		}
+		c := make(chan interface{})
+		go func() {
+			for m := range f.Log(params.Seq, params.Live) {
+				c <- m
+			}
+			close(c)
+		}()
+		return c
+	})
+
+	go func() {
+		i := 0
+		for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
+			go func(feed ssb.Ref, i int) {
+				time.Sleep(time.Duration(i) * 50 * time.Millisecond)
+				reply := make(chan *ssb.SignedMessage)
+				f := ds.GetFeed(feed)
+				seq := 0
+				if f.Latest() != nil {
+					seq = f.Latest().Sequence + 1
+				}
+				fmt.Println("Asking for ", f.ID, seq)
+				go func() {
+					err := muxConn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
+					if err != nil {
+						fmt.Println(err)
+					}
+					close(reply)
+				}()
+				for m := range reply {
+					f.AddMessage(m)
+				}
+			}(feed, i)
+			i++
+		}
+	}()
+	muxConn.Handle()
 }

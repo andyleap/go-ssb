@@ -7,6 +7,7 @@ import (
 
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/cmd/sbot/rpc"
+	_ "github.com/andyleap/go-ssb/git"
 	"github.com/andyleap/go-ssb/gossip"
 	"github.com/andyleap/go-ssb/graph"
 
