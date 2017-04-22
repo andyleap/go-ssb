@@ -3,7 +3,6 @@ package ssb
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -48,13 +47,26 @@ func (m *SignedMessage) Verify(f *Feed) error {
 	if latest == nil && m.Sequence == 1 {
 		return nil
 	}
+	if latest == nil && m.Previous != nil {
+		fmt.Println(string(m.Encode()))
+		return fmt.Errorf("Expected message")
+	}
 	if m.Previous == nil && latest == nil {
 		return nil
 	}
 	if m.Previous == nil && latest != nil {
+		fmt.Println(string(m.Encode()))
 		return fmt.Errorf("Error: expected previous %s but found %s", latest.Key(), "")
 	}
+	if latest != nil && m.Sequence == latest.Sequence {
+		return fmt.Errorf("Error: Repeated message")
+	}
 	if *m.Previous != latest.Key() {
+		/*buf, _ := Encode(latest)
+		buf2 := ToJSBinary(buf)
+
+		buf3, _ := Encode(m)
+		fmt.Printf("\n%q\n%q\n%q\n", string(buf), string(buf2), string(buf3))*/
 		return fmt.Errorf("Error: expected previous %s but found %s", latest.Key(), *m.Previous)
 	}
 	if m.Sequence != latest.Sequence+1 || m.Timestamp <= latest.Timestamp {
@@ -70,7 +82,7 @@ func (m *SignedMessage) Encode() []byte {
 
 func (m *SignedMessage) Key() Ref {
 	if m == nil {
-		return ""
+		return Ref{}
 	}
 	buf, _ := Encode(m)
 	/*enc := RemoveUnsupported(charmap.ISO8859_1.NewEncoder())
@@ -82,9 +94,11 @@ func (m *SignedMessage) Key() Ref {
 	switch strings.ToLower(m.Hash) {
 	case "sha256":
 		hash := sha256.Sum256(buf)
-		return Ref("%" + base64.StdEncoding.EncodeToString(hash[:]) + ".sha256")
+		ref, _ := NewRef(RefMessage, hash[:], RefAlgoSha256)
+		return ref
 	}
-	return ""
+	fmt.Println(string(buf))
+	return Ref{}
 }
 
 func (m *Message) Sign(s Signer) *SignedMessage {

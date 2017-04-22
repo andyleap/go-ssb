@@ -20,6 +20,10 @@ type Contact struct {
 }
 
 func init() {
+	ssb.RebuildClearHooks["graph"] = func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte("graph"))
+		return nil
+	}
 	ssb.AddMessageHooks["graph"] = handleGraph
 	ssb.MessageTypes["contact"] = func() interface{} { return &Contact{} }
 }
@@ -31,9 +35,12 @@ func handleGraph(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		if err != nil {
 			return err
 		}
-		FeedBucket, err := GraphBucket.CreateBucketIfNotExists([]byte(m.Author))
+		if mbc.Contact.Type != ssb.RefFeed {
+			return nil
+		}
+		FeedBucket, err := GraphBucket.CreateBucketIfNotExists(m.Author.DBKey())
 		var r Relation
-		json.Unmarshal(FeedBucket.Get([]byte(mbc.Contact)), &r)
+		json.Unmarshal(FeedBucket.Get(mbc.Contact.DBKey()), &r)
 		if err != nil {
 			return err
 		}
@@ -44,7 +51,7 @@ func handleGraph(m *ssb.SignedMessage, tx *bolt.Tx) error {
 			r.Blocking = *mbc.Blocking
 		}
 		buf, _ := json.Marshal(r)
-		err = FeedBucket.Put([]byte(mbc.Contact), buf)
+		err = FeedBucket.Put(mbc.Contact.DBKey(), buf)
 		if err != nil {
 			return err
 		}
@@ -63,16 +70,19 @@ func GetFollows(ds *ssb.DataStore, feed ssb.Ref, depth int) (follows map[ssb.Ref
 		for l1 := 0; l1 < depth; l1++ {
 			for k, v := range follows {
 				if v == l1 {
-					FeedBucket := GraphBucket.Bucket([]byte(k))
+					FeedBucket := GraphBucket.Bucket(k.DBKey())
 					if FeedBucket == nil {
 						continue
 					}
 					FeedBucket.ForEach(func(k, v []byte) error {
-						if _, ok := follows[ssb.Ref(k)]; !ok {
+						if len(k) == 0 {
+							return nil
+						}
+						if _, ok := follows[ssb.DBRef(k)]; !ok {
 							var r Relation
 							json.Unmarshal(v, &r)
 							if r.Following {
-								follows[ssb.Ref(k)] = l1 + 1
+								follows[ssb.DBRef(k)] = l1 + 1
 							}
 						}
 						return nil

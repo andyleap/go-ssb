@@ -18,14 +18,14 @@ import (
 )
 
 type Pub struct {
-	Link ssb.Ref `json:"link"`
+	Link ssb.Ref `json:"key"`
 	Host string  `json:"host"`
 	Port int     `json:"port"`
 }
 
 type PubAnnounce struct {
 	ssb.MessageBody
-	Pub Pub `json:"pub"`
+	Pub Pub `json:"address"`
 }
 
 func AddPub(ds *ssb.DataStore, pb Pub) {
@@ -35,21 +35,28 @@ func AddPub(ds *ssb.DataStore, pb Pub) {
 			return err
 		}
 		buf, _ := json.Marshal(pb)
-		PubBucket.Put([]byte(pb.Link), buf)
+		PubBucket.Put(pb.Link.DBKey(), buf)
 		return nil
 	})
 }
 
 func init() {
+	ssb.RebuildClearHooks["gossip"] = func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte("pubs"))
+		return nil
+	}
 	ssb.AddMessageHooks["gossip"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		_, mb := m.DecodeMessage()
 		if mbp, ok := mb.(*PubAnnounce); ok {
+			if mbp.Pub.Link.Type != ssb.RefFeed {
+				return nil
+			}
 			PubBucket, err := tx.CreateBucketIfNotExists([]byte("pubs"))
 			if err != nil {
 				return err
 			}
 			buf, _ := json.Marshal(mbp.Pub)
-			PubBucket.Put([]byte(mbp.Pub.Link), buf)
+			PubBucket.Put(mbp.Pub.Link.DBKey(), buf)
 			return nil
 		}
 		return nil
@@ -91,32 +98,35 @@ func Replicate(ds *ssb.DataStore) {
 		pubList := GetPubs(ds)
 		t := time.NewTicker(10 * time.Second)
 		for range t.C {
-			func() {
-				ed.lock.Lock()
-				defer ed.lock.Unlock()
+			fmt.Println("tick")
+			ed.lock.Lock()
+			connCount := len(ed.conns)
+			ed.lock.Unlock()
+			if connCount >= 2 {
+				continue
+			}
+			if len(pubList) == 0 {
+				pubList = GetPubs(ds)
+			}
+			if len(pubList) == 0 {
+				return
+			}
+			pub := pubList[0]
+			pubList = pubList[1:]
 
-				fmt.Println("tick")
-				if len(pubList) == 0 {
-					pubList = GetPubs(ds)
-				}
-				if len(pubList) == 0 {
-					return
-				}
-				pub := pubList[0]
-				pubList = pubList[1:]
+			if _, ok := ed.conns[pub.Link]; ok {
+				return
+			}
 
-				if _, ok := ed.conns[pub.Link]; ok {
-					return
-				}
+			var pubKey [32]byte
+			rawpubKey := pub.Link.Raw()
+			copy(pubKey[:], rawpubKey)
 
-				var pubKey [32]byte
-				rawpubKey := pub.Link.Raw()
-				copy(pubKey[:], rawpubKey)
-
-				d, err := ssc.NewDialer(pubKey)
-				if err != nil {
-					return
-				}
+			d, err := ssc.NewDialer(pubKey)
+			if err != nil {
+				return
+			}
+			go func() {
 				fmt.Println("Connecting to ", pub)
 				conn, err := d("tcp", fmt.Sprintf("%s:%d", pub.Host, pub.Port))
 				if err != nil {
@@ -124,7 +134,8 @@ func Replicate(ds *ssb.DataStore) {
 					return
 				}
 				muxConn := muxrpc.NewClient(log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)), conn)
-
+				ed.lock.Lock()
+				defer ed.lock.Unlock()
 				ed.conns[pub.Link] = muxConn
 				go func() {
 					HandleConn(ds, muxConn)
@@ -133,6 +144,7 @@ func Replicate(ds *ssb.DataStore) {
 					delete(ed.conns, pub.Link)
 				}()
 			}()
+
 		}
 	}()
 }
@@ -155,13 +167,13 @@ func GetPubs(ds *ssb.DataStore) (pds []*Pub) {
 }
 
 func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
-	/*muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
+	muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
 		params := struct {
 			Id   ssb.Ref `json:"id"`
 			Seq  int     `json:"seq"`
 			Live bool    `json:"live"`
 		}{
-			"",
+			ssb.Ref{},
 			0,
 			false,
 		}
@@ -181,7 +193,7 @@ func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
 			close(c)
 		}()
 		return c
-	})*/
+	})
 
 	go func() {
 		i := 0
@@ -190,19 +202,22 @@ func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
 				time.Sleep(time.Duration(i) * 50 * time.Millisecond)
 				reply := make(chan *ssb.SignedMessage)
 				f := ds.GetFeed(feed)
+				if f == nil {
+					return
+				}
 				seq := 0
 				if f.Latest() != nil {
 					seq = f.Latest().Sequence + 1
 				}
-				fmt.Println("Asking for ", f.ID, seq)
 				go func() {
-					err := muxConn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
-					if err != nil {
-						fmt.Println(err)
-					}
+					muxConn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
 					close(reply)
 				}()
 				for m := range reply {
+					if m.Sequence == 0 {
+						continue
+					}
+					fmt.Print("*")
 					f.AddMessage(m)
 				}
 			}(feed, i)

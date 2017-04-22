@@ -56,6 +56,10 @@ type RepoUpdate struct {
 }
 
 func init() {
+	ssb.RebuildClearHooks["git"] = func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte("repos"))
+		return nil
+	}
 	ssb.AddMessageHooks["git"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		_, mb := m.DecodeMessage()
 		if mbr, ok := mb.(*Repo); ok {
@@ -64,7 +68,7 @@ func init() {
 				return err
 			}
 			buf, _ := json.Marshal(mbr)
-			PubBucket.Put([]byte(m.Key()), buf)
+			PubBucket.Put(m.Key().DBKey(), buf)
 			return nil
 		}
 		return nil

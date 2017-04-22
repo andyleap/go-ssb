@@ -18,6 +18,10 @@ func itob(v int) []byte {
 }
 
 func init() {
+	ssb.RebuildClearHooks["channels"] = func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte("channels"))
+		return nil
+	}
 	ssb.AddMessageHooks["channels"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		_, mb := m.DecodeMessage()
 		if mbr, ok := mb.(*social.Post); ok {
@@ -39,10 +43,9 @@ func init() {
 				if err != nil {
 					return err
 				}
-				logBucket.Put(itob(int(seq)), []byte(m.Key()))
+				logBucket.Put(itob(int(seq)), m.Key().DBKey())
 
 				timeBucket, err := channelBucket.CreateBucketIfNotExists([]byte("time"))
-				timeBucket.FillPercent = 1
 				if err != nil {
 					return err
 				}
@@ -50,7 +53,7 @@ func init() {
 				for timeBucket.Get(itob(i)) != nil {
 					i++
 				}
-				timeBucket.Put(itob(i), []byte(m.Key()))
+				timeBucket.Put(itob(i), m.Key().DBKey())
 			}
 		}
 		return nil
@@ -58,6 +61,7 @@ func init() {
 }
 
 func GetChannelLatest(ds *ssb.DataStore, channel string, num int) (msgs []*ssb.SignedMessage) {
+	fmt.Println(channel, num, ds.DB())
 	ds.DB().View(func(tx *bolt.Tx) error {
 		channelsBucket := tx.Bucket([]byte("channels"))
 		if channelsBucket == nil {
@@ -78,7 +82,7 @@ func GetChannelLatest(ds *ssb.DataStore, channel string, num int) (msgs []*ssb.S
 			if v == nil {
 				break
 			}
-			m := ds.Get(tx, ssb.Ref(v))
+			m := ds.Get(tx, ssb.DBRef(v))
 			msgs = append(msgs, m)
 			_, v = cursor.Prev()
 		}

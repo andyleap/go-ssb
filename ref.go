@@ -5,13 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"strings"
 
 	"golang.org/x/crypto/ed25519"
 )
 
-type Ref string
+type Ref struct {
+	Type RefType
+	Data string
+	Algo RefAlgo
+}
 
 type RefType int
 
@@ -61,58 +64,66 @@ var (
 	ErrInvalidHash    = errors.New("Invalid Hash")
 )
 
-func NewRef(typ RefType, algo RefAlgo, raw []byte) (Ref, error) {
-	if algo != RefAlgoSha256 {
-		return "", ErrInvalidRefAlgo
-	}
-
-	if typ == RefInvalid {
-		return "", ErrInvalidRefType
-	}
-
-	b64 := base64.StdEncoding.EncodeToString(raw)
-
-	return Ref(fmt.Sprintf("%s%s.%s", typ, b64, algo)), nil
-}
-
-func (r Ref) Type() RefType {
-	switch r[0] {
-	case '@':
-		return RefFeed
-	case '%':
-		return RefMessage
-	case '&':
-		return RefBlob
-	}
-	return RefInvalid
-}
-
-func (r Ref) Algo() RefAlgo {
-	parts := strings.Split(string(r), ".")
-	if len(parts) != 2 {
-		return RefAlgoInvalid
-	}
-	switch strings.ToLower(parts[1]) {
-	case "ed25519":
-		return RefAlgoEd25519
-	case "sha256":
-		return RefAlgoSha256
-	}
-	return RefAlgoInvalid
+func NewRef(typ RefType, raw []byte, algo RefAlgo) (Ref, error) {
+	return Ref{typ, string(raw), algo}, nil
 }
 
 func (r Ref) Raw() []byte {
-	b64 := strings.Split(strings.TrimLeft(string(r), "@%&"), ".")[0]
-	raw, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		return nil
-	}
+	return []byte(r.Data)
+}
 
-	return raw
+func (r Ref) DBKey() []byte {
+	return append([]byte{byte(r.Type), byte(r.Algo)}, []byte(r.Data)...)
+}
+
+func DBRef(ref []byte) Ref {
+	return Ref{Type: RefType(ref[0]), Data: string(ref[2:]), Algo: RefAlgo(ref[1])}
+}
+
+func ParseRef(ref string) Ref {
+	parts := strings.Split(strings.Trim(ref, "@%&"), ".")
+	if len(parts) != 2 {
+		return Ref{}
+	}
+	r := Ref{}
+	switch ref[0] {
+	case '@':
+		r.Type = RefFeed
+	case '%':
+		r.Type = RefMessage
+	case '&':
+		r.Type = RefBlob
+	default:
+		return Ref{}
+	}
+	switch strings.ToLower(parts[1]) {
+	case "sha256":
+		r.Algo = RefAlgoSha256
+	case "ed25519":
+		r.Algo = RefAlgoEd25519
+	default:
+		return Ref{}
+	}
+	buf, _ := base64.StdEncoding.DecodeString(parts[0])
+	r.Data = string(buf)
+	return r
+}
+
+func (r Ref) String() string {
+	return r.Type.String() + base64.StdEncoding.EncodeToString([]byte(r.Data)) + "." + r.Algo.String()
+}
+
+func (r Ref) MarshalText() (text []byte, err error) {
+	return []byte(r.String()), nil
+}
+
+func (r *Ref) UnmarshalText(text []byte) error {
+	*r = ParseRef(string(text))
+	return nil
 }
 
 func (r Ref) CheckHash(content []byte) error {
-	switch r.Algo() {
+	switch r.Algo {
 	case RefAlgoSha256:
 		contentHash := sha256.Sum256(content)
 		if bytes.Equal(r.Raw(), contentHash[:]) {
@@ -157,7 +168,7 @@ func (s Signature) Raw() []byte {
 func (s Signature) Verify(content []byte, r Ref) error {
 	switch s.Algo() {
 	case SigAlgoEd25519:
-		if r.Algo() != RefAlgoEd25519 {
+		if r.Algo != RefAlgoEd25519 {
 			return ErrInvalidSig
 		}
 		rawkey := r.Raw()

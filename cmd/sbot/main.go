@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net"
-	"net/http"
 
 	"github.com/andyleap/go-ssb"
 	_ "github.com/andyleap/go-ssb/channels"
@@ -14,8 +13,6 @@ import (
 	"github.com/andyleap/go-ssb/social"
 
 	r "net/rpc"
-
-	"github.com/andyleap/boltinspect"
 )
 
 var datastore *ssb.DataStore
@@ -24,14 +21,9 @@ func main() {
 	datastore, _ = ssb.OpenDataStore("feeds.db", "secret.json")
 	gossip.Replicate(datastore)
 
-	bi := boltinspect.New(datastore.DB())
+	RegisterWebui()
 
-	http.HandleFunc("/bolt", bi.InspectEndpoint)
-
-	http.HandleFunc("/", Index)
-	http.HandleFunc("/channel", Channel)
-
-	go http.ListenAndServe(":9823", nil)
+	//datastore.Rebuild("channels")
 
 	r.Register(&Gossip{datastore})
 	r.Register(&Feed{datastore})
@@ -52,7 +44,7 @@ func (g *Gossip) AddPub(req rpc.AddPubReq, res *rpc.AddPubRes) error {
 	gossip.AddPub(g.ds, gossip.Pub{
 		Host: req.Host,
 		Port: req.Port,
-		Link: ssb.Ref(req.PubKey),
+		Link: ssb.ParseRef(req.PubKey),
 	})
 	return nil
 }
@@ -63,16 +55,16 @@ type Feed struct {
 
 func (f *Feed) Post(req rpc.PostReq, res *rpc.PostRes) error {
 	if req.Feed == "" {
-		req.Feed = string(f.ds.PrimaryRef)
+		req.Feed = f.ds.PrimaryRef.String()
 	}
-	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
+	feed := f.ds.GetFeed(ssb.ParseRef(req.Feed))
 
 	post := &social.Post{}
 
 	post.Text = req.Text
 	post.Channel = req.Channel
-	post.Branch = ssb.Ref(req.Branch)
-	post.Root = ssb.Ref(req.Root)
+	post.Branch = ssb.ParseRef(req.Branch)
+	post.Root = ssb.ParseRef(req.Root)
 	post.Type = "post"
 
 	err := feed.PublishMessage(post)
@@ -87,15 +79,15 @@ func (f *Feed) Post(req rpc.PostReq, res *rpc.PostRes) error {
 
 func (f *Feed) Follow(req rpc.FollowReq, res *rpc.FollowRes) error {
 	if req.Feed == "" {
-		req.Feed = string(f.ds.PrimaryRef)
+		req.Feed = f.ds.PrimaryRef.String()
 	}
-	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
+	feed := f.ds.GetFeed(ssb.ParseRef(req.Feed))
 
 	follow := &graph.Contact{}
 
 	following := true
 	follow.Following = &following
-	follow.Contact = ssb.Ref(req.Contact)
+	follow.Contact = ssb.ParseRef(req.Contact)
 	follow.Type = "contact"
 
 	err := feed.PublishMessage(follow)
@@ -110,9 +102,9 @@ func (f *Feed) Follow(req rpc.FollowReq, res *rpc.FollowRes) error {
 
 func (f *Feed) About(req rpc.AboutReq, res *rpc.AboutRes) error {
 	if req.Feed == "" {
-		req.Feed = string(f.ds.PrimaryRef)
+		req.Feed = f.ds.PrimaryRef.String()
 	}
-	feed := f.ds.GetFeed(ssb.Ref(req.Feed))
+	feed := f.ds.GetFeed(ssb.ParseRef(req.Feed))
 
 	about := &social.About{}
 

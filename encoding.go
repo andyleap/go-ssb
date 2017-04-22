@@ -1,6 +1,7 @@
 package ssb
 
 import (
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding"
@@ -55,8 +56,9 @@ func errorToRemove(dst []byte, r rune, err repertoireError) (n int, ok bool) {
 
 func ToJSBinary(src []byte) []byte {
 	runes := []rune(string(src))
-	out := make([]byte, len(runes))
-	for i, r := range runes {
+	utf := utf16.Encode(runes)
+	out := make([]byte, len(utf))
+	for i, r := range utf {
 		out[i] = byte(r)
 	}
 	return out

@@ -49,7 +49,7 @@ func init() {
 				if err != nil {
 					return err
 				}
-				FeedBucket, err := FeedsBucket.CreateBucketIfNotExists([]byte(m.Author))
+				FeedBucket, err := FeedsBucket.CreateBucketIfNotExists(m.Author.DBKey())
 				if err != nil {
 					return err
 				}
@@ -61,7 +61,7 @@ func init() {
 				if mba.Name != "" {
 					a.Name = mba.Name
 				}
-				if mba.Image != "" {
+				if mba.Image.Type != ssb.RefInvalid {
 					a.Image = mba.Image
 				}
 				buf, err := json.Marshal(a)
@@ -80,7 +80,7 @@ func GetAbout(tx *bolt.Tx, ref ssb.Ref) (a *About) {
 	if FeedsBucket == nil {
 		return
 	}
-	FeedBucket := FeedsBucket.Bucket([]byte(ref))
+	FeedBucket := FeedsBucket.Bucket(ref.DBKey())
 	if FeedBucket == nil {
 		return
 	}

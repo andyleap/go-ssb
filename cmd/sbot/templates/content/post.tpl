@@ -1,2 +1,2 @@
-{{$author := GetAbout .Message.Author}}<b>{{$author.Name}}</b><sub style="float: right;">{{RenderJSTime .Message.Timestamp}}</sub><br/>
+{{$author := GetAbout .Message.Author}}<b>{{$author.Name}}</b><sub style="float: right;"><a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}</a></sub><br/>
 {{Markdown .Content.Text}}
