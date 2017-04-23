@@ -17,22 +17,41 @@ import (
 	"github.com/andyleap/go-ssb/social"
 )
 
-var ContentTemplates = template.Must(template.New("content").Funcs(template.FuncMap{
-	"GetAbout": func(ref ssb.Ref) (a *social.About) {
-		datastore.DB().View(func(tx *bolt.Tx) error {
-			a = social.GetAbout(tx, ref)
-			return nil
-		})
-		return
-	},
-	"RenderJSTime": func(timestamp float64) string {
-		t := time.Unix(0, int64(timestamp*float64(time.Millisecond))).Local()
-		return t.Format(time.ANSIC)
-	},
-	"Markdown": func(markdown string) template.HTML {
-		return template.HTML(blackfriday.MarkdownCommon([]byte(markdown)))
-	},
-}).ParseGlob("templates/content/*.tpl"))
+var ContentTemplates = template.New("content")
+
+func init() {
+	template.Must(ContentTemplates.Funcs(template.FuncMap{
+		"GetAbout": func(ref ssb.Ref) (a *social.About) {
+			datastore.DB().View(func(tx *bolt.Tx) error {
+				a = social.GetAbout(tx, ref)
+				return nil
+			})
+			return
+		},
+		"RenderJSTime": func(timestamp float64) string {
+			t := time.Unix(0, int64(timestamp*float64(time.Millisecond))).Local()
+			return t.Format(time.ANSIC)
+		},
+		"Markdown": func(markdown string) template.HTML {
+			return template.HTML(blackfriday.MarkdownCommon([]byte(markdown)))
+		},
+		"GetMessage": func(ref ssb.Ref) *ssb.SignedMessage {
+			return datastore.Get(nil, ref)
+		},
+		"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+			t, md := m.DecodeMessage()
+			buf := &bytes.Buffer{}
+			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
+				Message *ssb.SignedMessage
+				Content interface{}
+			}{m, md})
+			if err != nil {
+				log.Println(err)
+			}
+			return template.HTML(buf.String())
+		},
+	}).ParseGlob("templates/content/*.tpl"))
+}
 
 var ChannelTemplate = template.Must(template.New("channel").Funcs(template.FuncMap{
 	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
@@ -99,7 +118,7 @@ var PostTemplate = template.Must(template.New("post").Funcs(template.FuncMap{
 <textarea name="text"></textarea><br>
 <input type="hidden" name="channel" value="{{.Content.Channel}}">
 <input type="hidden" name="branch" value="{{.Message.Key}}">
-<input type="hidden" name="root" value="{{if eq .Content.Root ""}}{{.Message.Key}}{{else}}{{.Content.Root}}{{end}}">
+<input type="hidden" name="root" value="{{if eq .Content.Root.Type 0}}{{.Message.Key}}{{else}}{{.Content.Root}}{{end}}">
 <input type="hidden" name="returnto" value="/post?id={{.Message.Key | urlquery}}">
 <input type="submit" value="Publish!">
 </form>
@@ -198,7 +217,6 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		Index(rw, req)
 		return
 	}
-	log.Println(message)
 	err := PostTemplate.Execute(rw, struct {
 		Message *ssb.SignedMessage
 		Content *social.Post

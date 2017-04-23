@@ -110,6 +110,9 @@ func ParseRef(ref string) Ref {
 }
 
 func (r Ref) String() string {
+	if r.Type == RefInvalid || r.Algo == RefAlgoInvalid {
+		return ""
+	}
 	return r.Type.String() + base64.StdEncoding.EncodeToString([]byte(r.Data)) + "." + r.Algo.String()
 }
 
@@ -120,6 +123,10 @@ func (r Ref) MarshalText() (text []byte, err error) {
 func (r *Ref) UnmarshalText(text []byte) error {
 	*r = ParseRef(string(text))
 	return nil
+}
+
+func (r Ref) IsMessage() bool {
+	return r.Type == RefMessage
 }
 
 func (r Ref) CheckHash(content []byte) error {
