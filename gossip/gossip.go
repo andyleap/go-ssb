@@ -56,7 +56,10 @@ func init() {
 				return err
 			}
 			buf, _ := json.Marshal(mbp.Pub)
-			PubBucket.Put(mbp.Pub.Link.DBKey(), buf)
+			err = PubBucket.Put(mbp.Pub.Link.DBKey(), buf)
+			if err != nil {
+				return err
+			}
 			return nil
 		}
 		return nil
@@ -102,7 +105,7 @@ func Replicate(ds *ssb.DataStore) {
 			ed.lock.Lock()
 			connCount := len(ed.conns)
 			ed.lock.Unlock()
-			if connCount >= 2 {
+			if connCount >= 10 {
 				continue
 			}
 			if len(pubList) == 0 {
@@ -137,6 +140,9 @@ func Replicate(ds *ssb.DataStore) {
 				ed.lock.Lock()
 				defer ed.lock.Unlock()
 				ed.conns[pub.Link] = muxConn
+				time.AfterFunc(5*time.Minute, func() {
+					muxConn.Close()
+				})
 				go func() {
 					HandleConn(ds, muxConn)
 					ed.lock.Lock()

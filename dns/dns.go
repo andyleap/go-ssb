@@ -34,7 +34,10 @@ func init() {
 				return err
 			}
 			buf, _ := json.Marshal(mbr)
-			PubBucket.Put([]byte(m.Key()), buf)
+			err = PubBucket.Put([]byte(m.Key()), buf)
+			if err != nil {
+				return err
+			}
 			return nil
 		}
 		return nil

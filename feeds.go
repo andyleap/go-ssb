@@ -185,7 +185,10 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 		if err != nil {
 			return err
 		}
-		FeedLogBucket.Put(itob(m.Sequence), buf)
+		err = FeedLogBucket.Put(itob(m.Sequence), buf)
+		if err != nil {
+			return err
+		}
 		LogBucket, err := tx.CreateBucketIfNotExists([]byte("log"))
 		if err != nil {
 			return err
@@ -195,14 +198,20 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 		if err != nil {
 			return err
 		}
-		LogBucket.Put(itob(int(seq)), m.Key().DBKey())
+		err = LogBucket.Put(itob(int(seq)), m.Key().DBKey())
+		if err != nil {
+			return err
+		}
 		PointerBucket, err := tx.CreateBucketIfNotExists([]byte("pointer"))
 		if err != nil {
 			return err
 		}
 		pointer := Pointer{Author: m.Author, Sequence: m.Sequence}
 		buf, _ = json.Marshal(pointer)
-		PointerBucket.Put(m.Key().DBKey(), buf)
+		err = PointerBucket.Put(m.Key().DBKey(), buf)
+		if err != nil {
+			return err
+		}
 		for module, hook := range AddMessageHooks {
 			err = hook(m, tx)
 			if err != nil {

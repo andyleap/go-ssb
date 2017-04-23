@@ -68,7 +68,10 @@ func init() {
 				if err != nil {
 					return err
 				}
-				FeedBucket.Put([]byte("about"), buf)
+				err = FeedBucket.Put([]byte("about"), buf)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		return nil
