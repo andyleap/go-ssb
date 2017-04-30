@@ -50,7 +50,7 @@ func (mt *MessageTopic) Register(recp chan *SignedMessage, strict bool) chan *Si
 	mt.lock.Lock()
 	defer mt.lock.Unlock()
 	if recp == nil {
-		recp = make(chan *SignedMessage, 10)
+		recp = make(chan *SignedMessage, 1)
 	}
 	mt.recps[recp] = strict
 	return recp

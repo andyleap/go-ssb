@@ -33,8 +33,7 @@ func main() {
 
 	r.Accept(l)
 
-	for {
-	}
+	select {}
 }
 
 type Gossip struct {

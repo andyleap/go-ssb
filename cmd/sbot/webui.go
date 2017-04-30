@@ -2,18 +2,20 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/russross/blackfriday"
 
 	"github.com/andyleap/boltinspect"
+
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/channels"
+	"github.com/andyleap/go-ssb/search"
 	"github.com/andyleap/go-ssb/social"
 )
 
@@ -39,6 +41,9 @@ func init() {
 			return datastore.Get(nil, ref)
 		},
 		"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+			if m == nil {
+				return ""
+			}
 			t, md := m.DecodeMessage()
 			buf := &bytes.Buffer{}
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
@@ -84,11 +89,39 @@ var ChannelTemplate = template.Must(template.New("channel").Funcs(template.FuncM
 </body>
 </html>`))
 
+var SearchTemplate = template.Must(template.New("search").Funcs(template.FuncMap{
+	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+		t, md := m.DecodeMessage()
+		buf := &bytes.Buffer{}
+		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
+			Message *ssb.SignedMessage
+			Content interface{}
+		}{m, md})
+		if err != nil {
+			log.Println(err)
+		}
+		return template.HTML(buf.String())
+	},
+}).Parse(`
+<html>
+<head>
+</head>
+<body>
+{{range .Messages}}
+{{RenderContent .}}<hr>
+{{end}}
+</body>
+</html>`))
+
 var AdminTemplate = template.Must(template.New("admin").Parse(`
 <html>
 <head>
 </head>
 <body>
+{{range $b, $size := .DBSize}}
+{{$b}} size: {{$size}}<br>
+{{end}}
+
 <a href="/rebuild?module=all">all</a><br>
 {{range .Modules}}
 <a href="/rebuild?module={{.}}">{{.}}</a><br>
@@ -114,6 +147,8 @@ var PostTemplate = template.Must(template.New("post").Funcs(template.FuncMap{
 <head>
 </head>
 <body>
+{{RenderContent .Message}}
+<hr>
 <form action="/publish/post" method="post">
 <textarea name="text"></textarea><br>
 <input type="hidden" name="channel" value="{{.Content.Channel}}">
@@ -122,8 +157,6 @@ var PostTemplate = template.Must(template.New("post").Funcs(template.FuncMap{
 <input type="hidden" name="returnto" value="/post?id={{.Message.Key | urlquery}}">
 <input type="submit" value="Publish!">
 </form>
-<hr>
-{{RenderContent .Message}}<hr>
 </body>
 </html>`))
 
@@ -139,6 +172,7 @@ func RegisterWebui() {
 	//http.HandleFunc("/", Index)
 	http.HandleFunc("/channel", Channel)
 	http.HandleFunc("/post", Post)
+	http.HandleFunc("/search", Search)
 	http.HandleFunc("/publish/post", PublishPost)
 
 	http.HandleFunc("/admin", Admin)
@@ -170,15 +204,39 @@ func Rebuild(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, "/admin", http.StatusSeeOther)
 }
 
+func calcSize(tx *bolt.Tx, b *bolt.Bucket) (size int) {
+	b.ForEach(func(k, v []byte) error {
+		size += len(k)
+		if v == nil {
+			size += calcSize(tx, b.Bucket(k))
+		} else {
+			size += len(v)
+		}
+		return nil
+	})
+	return
+}
+
 func Admin(rw http.ResponseWriter, req *http.Request) {
+	size := map[string]int{}
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		tx.ForEach(func(k []byte, b *bolt.Bucket) error {
+			size[string(k)] = calcSize(tx, b)
+			return nil
+		})
+		return nil
+	})
+
 	modules := []string{}
 	for module := range ssb.AddMessageHooks {
 		modules = append(modules, module)
 	}
 	err := AdminTemplate.Execute(rw, struct {
 		Modules []string
+		DBSize  map[string]int
 	}{
 		modules,
+		size,
 	})
 	if err != nil {
 		log.Println(err)
@@ -230,20 +288,35 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Channel(rw http.ResponseWriter, req *http.Request) {
-	fmt.Println("Channel Request!")
 	channel := req.FormValue("channel")
 	if channel == "" {
 		Index(rw, req)
 		return
 	}
 	messages := channels.GetChannelLatest(datastore, channel, 100)
-	log.Println(messages)
 	err := ChannelTemplate.Execute(rw, struct {
 		Messages []*ssb.SignedMessage
 		Channel  string
 	}{
 		messages,
 		channel,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func Search(rw http.ResponseWriter, req *http.Request) {
+	query := req.FormValue("q")
+	if query == "" {
+		Index(rw, req)
+		return
+	}
+	messages := search.Search(datastore, query, 50)
+	err := SearchTemplate.Execute(rw, struct {
+		Messages []*ssb.SignedMessage
+	}{
+		messages,
 	})
 	if err != nil {
 		log.Println(err)

@@ -2,9 +2,11 @@ package ssb
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"strings"
 )
 
@@ -78,6 +80,40 @@ func (m *SignedMessage) Verify(f *Feed) error {
 func (m *SignedMessage) Encode() []byte {
 	buf, _ := Encode(m)
 	return buf
+}
+
+func (m *SignedMessage) Compress() []byte {
+	buf := m.Encode()
+	cbuf := bytes.Buffer{}
+	cbuf.WriteByte(2)
+	cwrite, _ := flate.NewWriterDict(&cbuf, 9, Compression2)
+	cwrite.Write(buf)
+	cwrite.Flush()
+	return cbuf.Bytes()
+}
+
+func DecompressMessage(cbuf []byte) *SignedMessage {
+	switch cbuf[0] {
+	case 1:
+		reader := flate.NewReaderDict(bytes.NewReader(cbuf[1:]), Compression1)
+		buf, _ := ioutil.ReadAll(reader)
+		reader.Close()
+		var m *SignedMessage
+		json.Unmarshal(buf, &m)
+		return m
+	case 2:
+		reader := flate.NewReaderDict(bytes.NewReader(cbuf[1:]), Compression2)
+		buf, _ := ioutil.ReadAll(reader)
+		reader.Close()
+		var m *SignedMessage
+		json.Unmarshal(buf, &m)
+		return m
+	default:
+		var m *SignedMessage
+		json.Unmarshal(cbuf, &m)
+		return m
+	}
+
 }
 
 func (m *SignedMessage) Key() Ref {

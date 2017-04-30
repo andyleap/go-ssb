@@ -4,16 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
-	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
 
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/graph"
+	"github.com/andyleap/go-ssb/muxrpcManager"
 	"github.com/cryptix/secretstream"
-	"github.com/go-kit/kit/log"
 	"scuttlebot.io/go/muxrpc"
 )
 
@@ -67,18 +65,41 @@ func init() {
 	ssb.MessageTypes["pub"] = func() interface{} {
 		return &PubAnnounce{}
 	}
-}
 
-type ExtraData struct {
-	lock  sync.Mutex
-	conns map[ssb.Ref]*muxrpc.Client
+	ssb.RegisterInit(func(ds *ssb.DataStore) {
+		handlers, ok := ds.ExtraData("muxrpcHandlers").(map[string]func(conn *muxrpc.Conn, args json.RawMessage))
+		if !ok {
+			handlers = map[string]func(json.RawMessage){}
+			ds.SetExtraData("muxrpcHandlers", handlers)
+		}
+		handlers["createHistoryStream"] = func(conn *muxrpc.Conn, args json.RawMessage) {
+			params := struct {
+				Id   ssb.Ref `json:"id"`
+				Seq  int     `json:"seq"`
+				Live bool    `json:"live"`
+			}{
+				ssb.Ref{},
+				0,
+				false,
+			}
+			args := []interface{}{&params}
+			json.Unmarshal(rm, &args)
+			f := ds.GetFeed(params.Id)
+			go func() {
+				for m := range f.Log(params.Seq, params.Live) {
+					fmt.Println("Sending", m.Author, m.Sequence)
+				}
+			}()
+		}
+
+	})
+
 }
 
 func Replicate(ds *ssb.DataStore) {
-	ed := &ExtraData{conns: map[ssb.Ref]*muxrpc.Client{}}
-	ds.SetExtraData("gossip", ed)
 	sbotAppKey, _ := base64.StdEncoding.DecodeString("1KHLiKZvAvjbY1ziZEHMXawbCEIM6qwjCDm3VYRan/s=")
 	go func() {
+
 		sss, _ := secretstream.NewServer(*ds.PrimaryKey, sbotAppKey)
 		l, err := sss.Listen("tcp", ":8008")
 		if err != nil {
@@ -91,20 +112,21 @@ func Replicate(ds *ssb.DataStore) {
 				fmt.Println(err)
 				return
 			}
-			fmt.Println("New connection from:", conn.RemoteAddr())
-			muxConn := muxrpc.NewClient(log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)), conn)
-			go HandleConn(ds, muxConn)
+			remPubKey := conn.RemoteAddr().(*secretstream.Addr).PubKey()
+			remRef, _ := ssb.NewRef(ssb.Feed, remPubKey, ssb.RefAlgoEd25519)
+			muxrpcManager.HandleConn(ds, remRef, conn)
 		}
 	}()
 	go func() {
+		ed := ds.ExtraData("muxrpcConns").(*muxrpcManager.ExtraData)
 		ssc, _ := secretstream.NewClient(*ds.PrimaryKey, sbotAppKey)
 		pubList := GetPubs(ds)
 		t := time.NewTicker(10 * time.Second)
 		for range t.C {
 			fmt.Println("tick")
-			ed.lock.Lock()
-			connCount := len(ed.conns)
-			ed.lock.Unlock()
+			ed.Lock.Lock()
+			connCount := len(ed.Conns)
+			ed.Lock.Unlock()
 			if connCount >= 10 {
 				continue
 			}
@@ -112,13 +134,17 @@ func Replicate(ds *ssb.DataStore) {
 				pubList = GetPubs(ds)
 			}
 			if len(pubList) == 0 {
-				return
+				continue
 			}
 			pub := pubList[0]
 			pubList = pubList[1:]
 
-			if _, ok := ed.conns[pub.Link]; ok {
-				return
+			ed.Lock.Lock()
+			_, ok := ed.Conns[pub.Link]
+			ed.Lock.Unlock()
+			if !ok {
+
+				continue
 			}
 
 			var pubKey [32]byte
@@ -127,7 +153,7 @@ func Replicate(ds *ssb.DataStore) {
 
 			d, err := ssc.NewDialer(pubKey)
 			if err != nil {
-				return
+				continue
 			}
 			go func() {
 				fmt.Println("Connecting to ", pub)
@@ -136,19 +162,7 @@ func Replicate(ds *ssb.DataStore) {
 					fmt.Println(err)
 					return
 				}
-				muxConn := muxrpc.NewClient(log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout)), conn)
-				ed.lock.Lock()
-				defer ed.lock.Unlock()
-				ed.conns[pub.Link] = muxConn
-				time.AfterFunc(5*time.Minute, func() {
-					muxConn.Close()
-				})
-				go func() {
-					HandleConn(ds, muxConn)
-					ed.lock.Lock()
-					defer ed.lock.Unlock()
-					delete(ed.conns, pub.Link)
-				}()
+				muxrpcManager.HandleConn(ds, pub.Link, conn)
 			}()
 
 		}

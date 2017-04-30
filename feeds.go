@@ -24,6 +24,12 @@ func btoi(b []byte) int {
 	return int(binary.BigEndian.Uint64(b))
 }
 
+var initMethods = []func(ds *DataStore){}
+
+func RegisterInit(f func(ds *DataStore)) {
+	initMethods = append(initMethods, f)
+}
+
 type DataStore struct {
 	db *bolt.DB
 
@@ -39,6 +45,47 @@ type DataStore struct {
 	extraDataLock sync.Mutex
 
 	Keys map[Ref]Signer
+}
+
+func init() {
+	RegisterInit(func(ds *DataStore) {
+		ds.RegisterMethod("feed.Publish", func(feed Ref, message interface{}) error {
+			return ds.GetFeed(feed).PublishMessage(message)
+		})
+		ds.RegisterMethod("feed.Latest", func(feed Ref) *SignedMessage {
+			return ds.GetFeed(feed).Latest()
+		})
+	})
+	/*AddMessageHooks["recompress"] = func(m *SignedMessage, tx *bolt.Tx) error {
+		FeedsBucket, err := tx.CreateBucketIfNotExists([]byte("feeds"))
+		if err != nil {
+			return err
+		}
+		FeedBucket, err := FeedsBucket.CreateBucketIfNotExists(m.Author.DBKey())
+		if err != nil {
+			return err
+		}
+		FeedLogBucket, err := FeedBucket.CreateBucketIfNotExists([]byte("log"))
+		if err != nil {
+			return err
+		}
+		FeedLogBucket.FillPercent = 1
+		buf := m.Compress()
+		err = FeedLogBucket.Put(itob(m.Sequence), buf)
+		if err != nil {
+			return err
+		}
+		return nil
+	}*/
+}
+
+func (ds *DataStore) RegisterMethod(name string, method interface{}) {
+	RPCMethods, ok := ds.ExtraData("RPCMethods").(map[string]interface{})
+	if !ok {
+		RPCMethods = map[string]interface{}{}
+	}
+	RPCMethods[name] = method
+	ds.SetExtraData("RPCMethods", RPCMethods)
 }
 
 func (ds *DataStore) ExtraData(name string) interface{} {
@@ -61,14 +108,32 @@ type Feed struct {
 	store *DataStore
 	ID    Ref
 
-	Topic *MessageTopic
+	Topic     *MessageTopic
+	LatestSeq int
+	SeqLock   sync.Mutex
 
 	addChan chan *SignedMessage
 }
 
 type Pointer struct {
-	Author   Ref
 	Sequence int
+	LogKey   int
+	Author   []byte
+}
+
+func (p Pointer) Marshal() []byte {
+	buf := make([]byte, len(p.Author)+16)
+	binary.BigEndian.PutUint64(buf[0:], uint64(p.Sequence))
+	binary.BigEndian.PutUint64(buf[8:], uint64(p.LogKey))
+	copy(buf[16:], p.Author)
+	return buf
+}
+
+func (p *Pointer) Unmarshal(buf []byte) {
+	p.Author = make([]byte, len(buf)-16)
+	p.Sequence = int(binary.BigEndian.Uint64(buf[0:]))
+	p.LogKey = int(binary.BigEndian.Uint64(buf[8:]))
+	copy(p.Author, buf[16:])
 }
 
 func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
@@ -86,6 +151,11 @@ func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
 	ds.PrimaryKey, _ = secrethandshake.LoadSSBKeyPair(primaryKey)
 	ds.PrimaryRef, _ = NewRef(RefFeed, ds.PrimaryKey.Public[:], RefAlgoEd25519)
 	ds.Keys[ds.PrimaryRef] = &SignerEd25519{ed25519.PrivateKey(ds.PrimaryKey.Secret[:])}
+
+	for _, im := range initMethods {
+		im(ds)
+	}
+
 	return ds, nil
 }
 
@@ -104,6 +174,11 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 			feed.addMessage(m)
 		}
 	}()
+	m := feed.Latest()
+	if m != nil {
+		feed.LatestSeq = m.Sequence
+	}
+
 	feed.Topic.Register(ds.Topic.Send, true)
 	ds.feeds[feedID] = feed
 	return feed
@@ -127,12 +202,12 @@ func (ds *DataStore) Get(tx *bolt.Tx, post Ref) (m *SignedMessage) {
 		return
 	}
 	p := Pointer{}
-	json.Unmarshal(pdata, &p)
+	p.Unmarshal(pdata)
 	FeedsBucket := tx.Bucket([]byte("feeds"))
 	if FeedsBucket == nil {
 		return
 	}
-	FeedBucket := FeedsBucket.Bucket(p.Author.DBKey())
+	FeedBucket := FeedsBucket.Bucket(p.Author)
 	if FeedBucket == nil {
 		return
 	}
@@ -144,7 +219,7 @@ func (ds *DataStore) Get(tx *bolt.Tx, post Ref) (m *SignedMessage) {
 	if msgdata == nil {
 		return
 	}
-	json.Unmarshal(msgdata, &m)
+	m = DecompressMessage(msgdata)
 	return
 }
 
@@ -181,10 +256,7 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 			return err
 		}
 		FeedLogBucket.FillPercent = 1
-		buf, err := Encode(m)
-		if err != nil {
-			return err
-		}
+		buf := m.Compress()
 		err = FeedLogBucket.Put(itob(m.Sequence), buf)
 		if err != nil {
 			return err
@@ -206,8 +278,8 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 		if err != nil {
 			return err
 		}
-		pointer := Pointer{Author: m.Author, Sequence: m.Sequence}
-		buf, _ = json.Marshal(pointer)
+		pointer := Pointer{Sequence: m.Sequence, LogKey: int(seq), Author: m.Author.DBKey()}
+		buf = pointer.Marshal()
 		err = PointerBucket.Put(m.Key().DBKey(), buf)
 		if err != nil {
 			return err
@@ -224,6 +296,10 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 		fmt.Println("Bolt: ", err)
 		return err
 	}
+	f.SeqLock.Lock()
+	f.LatestSeq = m.Sequence
+	f.SeqLock.Unlock()
+
 	f.Topic.Send <- m
 	return nil
 }
@@ -341,10 +417,26 @@ func (f *Feed) Latest() (m *SignedMessage) {
 		}
 		cur := FeedLogBucket.Cursor()
 		_, val := cur.Last()
-		json.Unmarshal(val, &m)
+		m = DecompressMessage(val)
 		return nil
 	})
 	return
+}
+
+func (f *Feed) GetSeq(seq int) (m chan *SignedMessage) {
+	f.SeqLock.Lock()
+	if f.LatestSeq <= seq {
+		f.SeqLock.Unlock()
+
+	} else {
+		c := f.Topic.Register(nil, false)
+		f.SeqLock.Unlock()
+		for m := range c {
+
+		}
+
+	}
+
 }
 
 var ErrLogClosed = errors.New("LogClosed")
@@ -372,8 +464,7 @@ func (f *Feed) Log(seq int, live bool) chan *SignedMessage {
 				return nil
 			}
 			err := FeedLogBucket.ForEach(func(k, v []byte) error {
-				var m *SignedMessage
-				json.Unmarshal(v, &m)
+				m := DecompressMessage(v)
 				if m.Sequence < seq {
 					return nil
 				}
