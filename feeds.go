@@ -298,8 +298,9 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 	}
 	f.SeqLock.Lock()
 	f.LatestSeq = m.Sequence
-	f.SeqLock.Unlock()
 
+	f.SeqLock.Unlock()
+	fmt.Print("*")
 	f.Topic.Send <- m
 	return nil
 }
@@ -423,20 +424,28 @@ func (f *Feed) Latest() (m *SignedMessage) {
 	return
 }
 
-func (f *Feed) GetSeq(seq int) (m chan *SignedMessage) {
-	f.SeqLock.Lock()
-	if f.LatestSeq <= seq {
-		f.SeqLock.Unlock()
-
-	} else {
-		c := f.Topic.Register(nil, false)
-		f.SeqLock.Unlock()
-		for m := range c {
-
+func (f *Feed) GetSeq(seq int) (m *SignedMessage) {
+	f.store.db.View(func(tx *bolt.Tx) error {
+		FeedsBucket := tx.Bucket([]byte("feeds"))
+		if FeedsBucket == nil {
+			return nil
 		}
-
-	}
-
+		FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
+		if FeedBucket == nil {
+			return nil
+		}
+		FeedLogBucket := FeedBucket.Bucket([]byte("log"))
+		if FeedLogBucket == nil {
+			return nil
+		}
+		val := FeedLogBucket.Get(itob(seq))
+		if val == nil {
+			return nil
+		}
+		m = DecompressMessage(val)
+		return nil
+	})
+	return m
 }
 
 var ErrLogClosed = errors.New("LogClosed")

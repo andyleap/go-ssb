@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -11,8 +12,9 @@ import (
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/muxrpcManager"
+	"github.com/andyleap/muxrpc"
+	"github.com/andyleap/muxrpc/codec"
 	"github.com/cryptix/secretstream"
-	"scuttlebot.io/go/muxrpc"
 )
 
 type Pub struct {
@@ -67,12 +69,12 @@ func init() {
 	}
 
 	ssb.RegisterInit(func(ds *ssb.DataStore) {
-		handlers, ok := ds.ExtraData("muxrpcHandlers").(map[string]func(conn *muxrpc.Conn, args json.RawMessage))
+		handlers, ok := ds.ExtraData("muxrpcHandlers").(map[string]func(conn *muxrpc.Conn, req int32, args json.RawMessage))
 		if !ok {
-			handlers = map[string]func(json.RawMessage){}
+			handlers = map[string]func(conn *muxrpc.Conn, req int32, args json.RawMessage){}
 			ds.SetExtraData("muxrpcHandlers", handlers)
 		}
-		handlers["createHistoryStream"] = func(conn *muxrpc.Conn, args json.RawMessage) {
+		handlers["createHistoryStream"] = func(conn *muxrpc.Conn, req int32, rm json.RawMessage) {
 			params := struct {
 				Id   ssb.Ref `json:"id"`
 				Seq  int     `json:"seq"`
@@ -86,12 +88,63 @@ func init() {
 			json.Unmarshal(rm, &args)
 			f := ds.GetFeed(params.Id)
 			go func() {
-				for m := range f.Log(params.Seq, params.Live) {
-					fmt.Println("Sending", m.Author, m.Sequence)
+				err := f.Follow(params.Seq, params.Live, func(m *ssb.SignedMessage) error {
+					err := conn.Send(&codec.Packet{
+						Req:    -req,
+						Type:   codec.JSON,
+						Body:   m.Encode(),
+						Stream: true,
+					})
+					return err
+				}, conn.Done)
+				if err != nil {
+					log.Println(err)
+					return
 				}
+				conn.Send(&codec.Packet{
+					Req:    -req,
+					Type:   codec.JSON,
+					Stream: true,
+					EndErr: true,
+				})
 			}()
 		}
-
+		ds.SetExtraData("muxrpcOnConnect", func(conn *muxrpc.Conn) {
+			go func() {
+				i := 0
+				for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
+					go func(feed ssb.Ref, i int) {
+						time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+						f := ds.GetFeed(feed)
+						if f == nil {
+							return
+						}
+						seq := 0
+						if f.Latest() != nil {
+							seq = f.Latest().Sequence + 1
+						}
+						go func() {
+							reply := func(p *codec.Packet) {
+								if p.Type != codec.JSON {
+									return
+								}
+								var m *ssb.SignedMessage
+								err := json.Unmarshal(p.Body, &m)
+								if err != nil {
+									return
+								}
+								f.AddMessage(m)
+							}
+							err := conn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
+							if err != nil {
+								log.Println(err)
+							}
+						}()
+					}(feed, i)
+					i++
+				}
+			}()
+		})
 	})
 
 }
@@ -113,7 +166,7 @@ func Replicate(ds *ssb.DataStore) {
 				return
 			}
 			remPubKey := conn.RemoteAddr().(*secretstream.Addr).PubKey()
-			remRef, _ := ssb.NewRef(ssb.Feed, remPubKey, ssb.RefAlgoEd25519)
+			remRef, _ := ssb.NewRef(ssb.RefFeed, remPubKey, ssb.RefAlgoEd25519)
 			muxrpcManager.HandleConn(ds, remRef, conn)
 		}
 	}()
@@ -121,13 +174,13 @@ func Replicate(ds *ssb.DataStore) {
 		ed := ds.ExtraData("muxrpcConns").(*muxrpcManager.ExtraData)
 		ssc, _ := secretstream.NewClient(*ds.PrimaryKey, sbotAppKey)
 		pubList := GetPubs(ds)
-		t := time.NewTicker(10 * time.Second)
+		t := time.NewTicker(20 * time.Second)
 		for range t.C {
 			fmt.Println("tick")
 			ed.Lock.Lock()
 			connCount := len(ed.Conns)
 			ed.Lock.Unlock()
-			if connCount >= 10 {
+			if connCount >= 2 {
 				continue
 			}
 			if len(pubList) == 0 {
@@ -142,8 +195,7 @@ func Replicate(ds *ssb.DataStore) {
 			ed.Lock.Lock()
 			_, ok := ed.Conns[pub.Link]
 			ed.Lock.Unlock()
-			if !ok {
-
+			if ok {
 				continue
 			}
 
@@ -156,10 +208,10 @@ func Replicate(ds *ssb.DataStore) {
 				continue
 			}
 			go func() {
-				fmt.Println("Connecting to ", pub)
+				log.Println("Connecting to ", pub)
 				conn, err := d("tcp", fmt.Sprintf("%s:%d", pub.Host, pub.Port))
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 					return
 				}
 				muxrpcManager.HandleConn(ds, pub.Link, conn)
@@ -186,7 +238,7 @@ func GetPubs(ds *ssb.DataStore) (pds []*Pub) {
 	return
 }
 
-func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
+/*func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
 	muxConn.HandleSource("createHistoryStream", func(rm json.RawMessage) chan interface{} {
 		params := struct {
 			Id   ssb.Ref `json:"id"`
@@ -246,3 +298,4 @@ func HandleConn(ds *ssb.DataStore, muxConn *muxrpc.Client) {
 	}()
 	muxConn.Handle()
 }
+*/
