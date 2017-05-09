@@ -11,6 +11,30 @@ type Link struct {
 	Link ssb.Ref `json:"link"`
 }
 
+type Image struct {
+	image
+}
+
+type image struct {
+	Link   ssb.Ref `json:"link"`
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	Name   string  `json:"name"`
+	Size   int     `json:"size"`
+	Type   string  `json:"type"`
+}
+
+func (i *Image) UnmarshalJSON(b []byte) error {
+	err := json.Unmarshal(b, &i.image)
+	if err != nil {
+		err = json.Unmarshal(b, &i.Link)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type Post struct {
 	ssb.MessageBody
 	Text     string  `json:"text"`
@@ -25,7 +49,7 @@ type About struct {
 	ssb.MessageBody
 	About ssb.Ref `json:"about"`
 	Name  string  `json:"name,omitempty"`
-	Image ssb.Ref `json:"image,omitempty"`
+	Image Image   `json:"image,omitempty"`
 }
 
 type Vote struct {
@@ -61,7 +85,7 @@ func init() {
 				if mba.Name != "" {
 					a.Name = mba.Name
 				}
-				if mba.Image.Type != ssb.RefInvalid {
+				if mba.Image.Link.Type != ssb.RefInvalid {
 					a.Image = mba.Image
 				}
 				buf, err := json.Marshal(a)

@@ -32,16 +32,16 @@ func HandleConn(ds *ssb.DataStore, ref ssb.Ref, conn io.ReadWriteCloser) {
 	ed.Conns[ref] = muxConn
 	ed.Lock.Unlock()
 
-	onConnect, onConnectOK := ds.ExtraData("muxrpcOnConnect").(func(conn *muxrpc.Conn))
+	onConnect, onConnectOK := ds.ExtraData("muxrpcOnConnect").(map[string]func(conn *muxrpc.Conn))
 
 	if onConnectOK {
-		go onConnect(muxConn)
+		for _, oc := range onConnect {
+			go oc(muxConn)
+		}
 	}
 
-	go func() {
-		muxConn.Handle()
-		ed.Lock.Lock()
-		delete(ed.Conns, ref)
-		ed.Lock.Unlock()
-	}()
+	muxConn.Handle()
+	ed.Lock.Lock()
+	delete(ed.Conns, ref)
+	ed.Lock.Unlock()
 }

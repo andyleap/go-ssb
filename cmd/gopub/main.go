@@ -9,6 +9,5 @@ func main() {
 	datastore, _ := ssb.OpenDataStore("feeds.db", "secret.json")
 	gossip.Replicate(datastore)
 
-	for {
-	}
+	select {}
 }

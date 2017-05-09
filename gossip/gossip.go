@@ -109,42 +109,45 @@ func init() {
 				})
 			}()
 		}
-		ds.SetExtraData("muxrpcOnConnect", func(conn *muxrpc.Conn) {
-			go func() {
-				i := 0
-				for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
-					go func(feed ssb.Ref, i int) {
-						time.Sleep(time.Duration(i) * 10 * time.Millisecond)
-						f := ds.GetFeed(feed)
-						if f == nil {
-							return
-						}
-						seq := 0
-						if f.Latest() != nil {
-							seq = f.Latest().Sequence + 1
-						}
-						go func() {
-							reply := func(p *codec.Packet) {
-								if p.Type != codec.JSON {
-									return
-								}
-								var m *ssb.SignedMessage
-								err := json.Unmarshal(p.Body, &m)
-								if err != nil {
-									return
-								}
-								f.AddMessage(m)
+		onConnects, ok := ds.ExtraData("muxrpcOnConnect").(map[string]func(conn *muxrpc.Conn))
+		if !ok {
+			onConnects = map[string]func(conn *muxrpc.Conn){}
+			ds.SetExtraData("muxrpcOnConnect", onConnects)
+		}
+		onConnects["replicate"] = func(conn *muxrpc.Conn) {
+			i := 0
+			for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
+				go func(feed ssb.Ref, i int) {
+					time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+					f := ds.GetFeed(feed)
+					if f == nil {
+						return
+					}
+					seq := 0
+					if f.Latest() != nil {
+						seq = f.Latest().Sequence + 1
+					}
+					go func() {
+						reply := func(p *codec.Packet) {
+							if p.Type != codec.JSON {
+								return
 							}
-							err := conn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
+							var m *ssb.SignedMessage
+							err := json.Unmarshal(p.Body, &m)
 							if err != nil {
-								log.Println(err)
+								return
 							}
-						}()
-					}(feed, i)
-					i++
-				}
-			}()
-		})
+							f.AddMessage(m)
+						}
+						err := conn.Source("createHistoryStream", reply, map[string]interface{}{"id": f.ID, "seq": seq, "live": true, "keys": false})
+						if err != nil {
+							log.Println(err)
+						}
+					}()
+				}(feed, i)
+				i++
+			}
+		}
 	})
 
 }
@@ -167,20 +170,20 @@ func Replicate(ds *ssb.DataStore) {
 			}
 			remPubKey := conn.RemoteAddr().(*secretstream.Addr).PubKey()
 			remRef, _ := ssb.NewRef(ssb.RefFeed, remPubKey, ssb.RefAlgoEd25519)
-			muxrpcManager.HandleConn(ds, remRef, conn)
+			go muxrpcManager.HandleConn(ds, remRef, conn)
 		}
 	}()
 	go func() {
 		ed := ds.ExtraData("muxrpcConns").(*muxrpcManager.ExtraData)
 		ssc, _ := secretstream.NewClient(*ds.PrimaryKey, sbotAppKey)
 		pubList := GetPubs(ds)
-		t := time.NewTicker(20 * time.Second)
+		t := time.NewTicker(5 * time.Second)
 		for range t.C {
 			fmt.Println("tick")
 			ed.Lock.Lock()
 			connCount := len(ed.Conns)
 			ed.Lock.Unlock()
-			if connCount >= 2 {
+			if connCount >= 3 {
 				continue
 			}
 			if len(pubList) == 0 {
@@ -214,7 +217,14 @@ func Replicate(ds *ssb.DataStore) {
 					log.Println(err)
 					return
 				}
+				end := time.NewTimer(5 * time.Minute)
+				go func() {
+					for range end.C {
+						conn.Close()
+					}
+				}()
 				muxrpcManager.HandleConn(ds, pub.Link, conn)
+				end.Stop()
 			}()
 
 		}

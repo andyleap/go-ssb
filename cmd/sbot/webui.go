@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/url"
+	"io"
 	"bytes"
 	"html/template"
 	"log"
@@ -17,9 +19,49 @@ import (
 	"github.com/andyleap/go-ssb/channels"
 	"github.com/andyleap/go-ssb/search"
 	"github.com/andyleap/go-ssb/social"
+	"github.com/andyleap/go-ssb/blobs"
 )
 
 var ContentTemplates = template.New("content")
+
+type SSBRenderer struct {
+	blackfriday.Renderer
+}
+
+func (ssbr *SSBRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {
+	r := ssb.ParseRef(string(link))
+	switch r.Type {
+		case ssb.RefBlob:
+		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
+	}
+	ssbr.Renderer.Image(out, link, title, alt)
+}
+
+func RenderMarkdown(input []byte) []byte {
+commonHtmlFlags := 0 |
+		blackfriday.HTML_USE_XHTML |
+		blackfriday.HTML_USE_SMARTYPANTS |
+		blackfriday.HTML_SMARTYPANTS_FRACTIONS |
+		blackfriday.HTML_SMARTYPANTS_DASHES |
+		blackfriday.HTML_SMARTYPANTS_LATEX_DASHES
+
+	commonExtensions := 0 |
+		blackfriday.EXTENSION_NO_INTRA_EMPHASIS |
+		blackfriday.EXTENSION_TABLES |
+		blackfriday.EXTENSION_FENCED_CODE |
+		blackfriday.EXTENSION_AUTOLINK |
+		blackfriday.EXTENSION_STRIKETHROUGH |
+		blackfriday.EXTENSION_SPACE_HEADERS |
+		blackfriday.EXTENSION_HEADER_IDS |
+		blackfriday.EXTENSION_BACKSLASH_LINE_BREAK |
+		blackfriday.EXTENSION_DEFINITION_LISTS
+	// set up the HTML renderer
+	renderer := &SSBRenderer{blackfriday.HtmlRenderer(commonHtmlFlags, "", "")}
+	options := blackfriday.Options{
+		Extensions: commonExtensions}
+
+	return blackfriday.MarkdownOptions(input, renderer, options)
+}
 
 func init() {
 	template.Must(ContentTemplates.Funcs(template.FuncMap{
@@ -35,7 +77,7 @@ func init() {
 			return t.Format(time.ANSIC)
 		},
 		"Markdown": func(markdown string) template.HTML {
-			return template.HTML(blackfriday.MarkdownCommon([]byte(markdown)))
+			return template.HTML(RenderMarkdown([]byte(markdown)))
 		},
 		"GetMessage": func(ref ssb.Ref) *ssb.SignedMessage {
 			return datastore.Get(nil, ref)
@@ -47,9 +89,10 @@ func init() {
 			t, md := m.DecodeMessage()
 			buf := &bytes.Buffer{}
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-				Message *ssb.SignedMessage
-				Content interface{}
-			}{m, md})
+				Message  *ssb.SignedMessage
+				Content  interface{}
+				Embedded bool
+			}{m, md, true})
 			if err != nil {
 				log.Println(err)
 			}
@@ -63,9 +106,10 @@ var ChannelTemplate = template.Must(template.New("channel").Funcs(template.FuncM
 		t, md := m.DecodeMessage()
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message *ssb.SignedMessage
-			Content interface{}
-		}{m, md})
+			Message  *ssb.SignedMessage
+			Content  interface{}
+			Embedded bool
+		}{m, md, false})
 		if err != nil {
 			log.Println(err)
 		}
@@ -94,9 +138,10 @@ var SearchTemplate = template.Must(template.New("search").Funcs(template.FuncMap
 		t, md := m.DecodeMessage()
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message *ssb.SignedMessage
-			Content interface{}
-		}{m, md})
+			Message  *ssb.SignedMessage
+			Content  interface{}
+			Embedded bool
+		}{m, md, false})
 		if err != nil {
 			log.Println(err)
 		}
@@ -136,9 +181,10 @@ var PostTemplate = template.Must(template.New("post").Funcs(template.FuncMap{
 		t, md := m.DecodeMessage()
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message *ssb.SignedMessage
-			Content interface{}
-		}{m, md})
+			Message  *ssb.SignedMessage
+			Content  interface{}
+			Embedded bool
+		}{m, md, false})
 		if err != nil {
 			log.Println(err)
 		}
@@ -179,6 +225,8 @@ func RegisterWebui() {
 
 	http.HandleFunc("/admin", Admin)
 	http.HandleFunc("/rebuild", Rebuild)
+	
+	http.HandleFunc("/blob", Blob)
 
 	go http.ListenAndServe(":9823", nil)
 }
@@ -323,4 +371,21 @@ func Search(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
+}
+
+func Blob(rw http.ResponseWriter, req *http.Request) {
+	id := req.FormValue("id")
+	if id == "" {
+		http.NotFound(rw, req)
+		return
+	}
+	r := ssb.ParseRef(id)
+	bs := datastore.ExtraData("blobStore").(*blobs.BlobStore)
+	if !bs.Has(r) {
+		bs.Want(r)
+		bs.WaitFor(r)
+	}
+	rc := bs.Get(r)
+	defer rc.Close()
+	io.Copy(rw, rc)
 }
