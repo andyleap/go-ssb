@@ -20,6 +20,7 @@ import (
 	"github.com/andyleap/go-ssb/search"
 	"github.com/andyleap/go-ssb/social"
 	"github.com/andyleap/go-ssb/blobs"
+	"github.com/andyleap/go-ssb/graph"
 )
 
 var ContentTemplates = template.New("content")
@@ -65,6 +66,24 @@ commonHtmlFlags := 0 |
 
 func init() {
 	template.Must(ContentTemplates.Funcs(template.FuncMap{
+		"Avatar": func(ref ssb.Ref) template.HTML {
+			if ref.Type != ssb.RefFeed {
+				return ""
+			}
+			var a *social.About
+datastore.DB().View(func(tx *bolt.Tx) error {
+				a = social.GetAbout(tx, ref)
+				return nil
+			})
+			buf := &bytes.Buffer{}
+			err := ContentTemplates.ExecuteTemplate(buf, "avatar.tpl", struct{
+			About *social.About
+			Ref ssb.Ref}{a, ref})
+			if err != nil {
+				log.Println(err)
+			}
+			return template.HTML(buf.String())
+		},
 		"GetAbout": func(ref ssb.Ref) (a *social.About) {
 			datastore.DB().View(func(tx *bolt.Tx) error {
 				a = social.GetAbout(tx, ref)
@@ -81,6 +100,13 @@ func init() {
 		},
 		"GetMessage": func(ref ssb.Ref) *ssb.SignedMessage {
 			return datastore.Get(nil, ref)
+		},
+		"GetVotes": func(ref ssb.Ref) (votes []*social.Vote) {
+			datastore.DB().View(func(tx *bolt.Tx) error {
+				votes = social.GetVotes(tx, ref)
+				return nil
+			})
+			return
 		},
 		"RenderContent": func(m *ssb.SignedMessage) template.HTML {
 			if m == nil {
@@ -124,6 +150,37 @@ var ChannelTemplate = template.Must(template.New("channel").Funcs(template.FuncM
 <textarea name="text"></textarea><br>
 <input type="hidden" name="channel" value="{{.Channel}}">
 <input type="hidden" name="returnto" value="/channel?channel={{.Channel}}">
+<input type="submit" value="Publish!">
+</form>
+<hr>
+{{range .Messages}}
+{{RenderContent .}}<hr>
+{{end}}
+</body>
+</html>`))
+
+var IndexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
+	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+		t, md := m.DecodeMessage()
+		buf := &bytes.Buffer{}
+		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
+			Message  *ssb.SignedMessage
+			Content  interface{}
+			Embedded bool
+		}{m, md, false})
+		if err != nil {
+			log.Println(err)
+		}
+		return template.HTML("<!-- " + t + " --!>" + buf.String())
+	},
+}).Parse(`
+<html>
+<head>
+</head>
+<body>
+<form action="/publish/post" method="post">
+<textarea name="text"></textarea><br>
+<input type="hidden" name="returnto" value="/">
 <input type="submit" value="Publish!">
 </form>
 <hr>
@@ -217,7 +274,7 @@ func RegisterWebui() {
 
 	http.HandleFunc("/bolt", bi.InspectEndpoint)
 
-	//http.HandleFunc("/", Index)
+	http.HandleFunc("/", Index)
 	http.HandleFunc("/channel", Channel)
 	http.HandleFunc("/post", Post)
 	http.HandleFunc("/search", Search)
@@ -294,14 +351,11 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
-	messages := channels.GetChannelLatest(datastore, "golang", 20)
-	log.Println(messages)
-	err := ChannelTemplate.Execute(rw, struct {
+	messages := datastore.LatestCountFiltered(100, graph.GetFollows(datastore, datastore.PrimaryRef, 1))
+	err := IndexTemplate.Execute(rw, struct {
 		Messages []*ssb.SignedMessage
-		Channel  string
 	}{
 		messages,
-		"golang",
 	})
 	if err != nil {
 		log.Println(err)

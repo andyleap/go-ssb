@@ -76,10 +76,10 @@ func init() {
 		}
 		return nil
 	}
-	ssb.MessageTypes["git-repo"] = func() interface{} {
-		return &Repo{}
+	ssb.MessageTypes["git-repo"] = func(mb ssb.MessageBody) interface{} {
+		return &Repo{MessageBody: mb}
 	}
-	ssb.MessageTypes["git-update"] = func() interface{} {
-		return &RepoUpdate{}
+	ssb.MessageTypes["git-update"] = func(mb ssb.MessageBody) interface{} {
+		return &RepoUpdate{MessageBody: mb}
 	}
 }

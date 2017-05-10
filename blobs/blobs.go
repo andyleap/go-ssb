@@ -63,10 +63,8 @@ func (bs *BlobStore) Has(r ssb.Ref) bool {
 	}
 	pre, hexhash := hexhash[:2], hexhash[2:]
 	if _, err := os.Stat(filepath.Join(bs.Root, pre, hexhash)); !os.IsNotExist(err) {
-		log.Println("Has: ", hexhash)
 		return true
 	}
-	log.Println("NotHas: ", hexhash)
 	return false
 }
 

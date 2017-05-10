@@ -6,11 +6,9 @@
 </div>
 {{end}}
 {{end}}
-{{$author := GetAbout .Message.Author}}{{if $author}}
-{{if ne $author.Image.Link.String ""}}<img src="/blob?id={{urlquery $author.Image.Link}}" width="100" height="100">{{end}}
-<b>{{$author.Name}}</b>
-{{else}}
-{{.Message.Author}}
-{{end}}
-<sub style="float: right;"><a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}</a></sub><br/>
+<sub style="float: right;"><a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}<br></a>
+{{if ne .Content.Channel ""}}#{{.Content.Channel}}{{end}}
+{{$votes := GetVotes .Message.Key}}<span style="float: right;">{{len $votes}} Votes</span>
+</sub>
+{{Avatar .Message.Author}}
 {{Markdown .Content.Text}}

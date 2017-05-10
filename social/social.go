@@ -62,9 +62,13 @@ type Vote struct {
 }
 
 func init() {
-	ssb.MessageTypes["post"] = func() interface{} { return &Post{} }
-	ssb.MessageTypes["about"] = func() interface{} { return &About{} }
-	ssb.MessageTypes["vote"] = func() interface{} { return &Vote{} }
+	ssb.MessageTypes["post"] = func(mb ssb.MessageBody) interface{} { return &Post{MessageBody: mb} }
+	ssb.MessageTypes["about"] = func(mb ssb.MessageBody) interface{} { return &About{MessageBody: mb} }
+	ssb.MessageTypes["vote"] = func(mb ssb.MessageBody) interface{} { return &Vote{MessageBody: mb} }
+	ssb.RebuildClearHooks["social"] = func(tx *bolt.Tx) error {
+		tx.DeleteBucket([]byte("votes"))
+		return nil
+	}
 	ssb.AddMessageHooks["social"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		_, mb := m.DecodeMessage()
 		if mba, ok := mb.(*About); ok {
@@ -98,6 +102,24 @@ func init() {
 				}
 			}
 		}
+		if vote, ok := mb.(*Vote); ok {
+			VotesBucket, err := tx.CreateBucketIfNotExists([]byte("votes"))
+			if err != nil {
+				return err
+			}
+			votesRaw := VotesBucket.Get(vote.Vote.Link.DBKey())
+			var votes []ssb.Ref
+			if votesRaw != nil {
+				json.Unmarshal(votesRaw, &votes)
+			}
+			votes = append(votes, m.Key())
+			buf, _ := json.Marshal(votes)
+
+			err = VotesBucket.Put(vote.Vote.Link.DBKey(), buf)
+			if err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }
@@ -117,4 +139,28 @@ func GetAbout(tx *bolt.Tx, ref ssb.Ref) (a *About) {
 	}
 	json.Unmarshal(aboutdata, &a)
 	return
+}
+
+func GetVotes(tx *bolt.Tx, ref ssb.Ref) []*Vote {
+	VotesBucket := tx.Bucket([]byte("votes"))
+	if VotesBucket == nil {
+		return nil
+	}
+	votesRaw := VotesBucket.Get(ref.DBKey())
+	var voteRefs []ssb.Ref
+	if votesRaw != nil {
+		json.Unmarshal(votesRaw, &voteRefs)
+	}
+	votes := make([]*Vote, 0, len(voteRefs))
+	for _, r := range voteRefs {
+		msg := ssb.GetMsg(tx, r)
+		if msg == nil {
+			continue
+		}
+		_, v := msg.DecodeMessage()
+		if vote, ok := v.(*Vote); ok {
+			votes = append(votes, vote)
+		}
+	}
+	return votes
 }

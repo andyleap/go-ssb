@@ -5,16 +5,18 @@ import (
 )
 
 type MessageBody struct {
-	Type string `json:"type"`
+	Type     string `json:"type"`
+	*Message `json:"-"`
 }
 
-var MessageTypes = map[string]func() interface{}{}
+var MessageTypes = map[string]func(mb MessageBody) interface{}{}
 
 func (m *Message) DecodeMessage() (t string, mb interface{}) {
-	Type := MessageBody{}
+	Type := &MessageBody{}
 	json.Unmarshal(m.Content, &Type)
+	Type.Message = m
 	if mf, ok := MessageTypes[Type.Type]; ok {
-		mb = mf()
+		mb = mf(*Type)
 	}
 	t = Type.Type
 	json.Unmarshal(m.Content, &mb)

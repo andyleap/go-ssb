@@ -25,7 +25,7 @@ func init() {
 		return nil
 	}
 	ssb.AddMessageHooks["graph"] = handleGraph
-	ssb.MessageTypes["contact"] = func() interface{} { return &Contact{} }
+	ssb.MessageTypes["contact"] = func(mb ssb.MessageBody) interface{} { return &Contact{MessageBody: mb} }
 }
 
 func handleGraph(m *ssb.SignedMessage, tx *bolt.Tx) error {

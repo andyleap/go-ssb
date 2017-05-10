@@ -223,6 +223,37 @@ func (ds *DataStore) Get(tx *bolt.Tx, post Ref) (m *SignedMessage) {
 	return
 }
 
+func GetMsg(tx *bolt.Tx, post Ref) (m *SignedMessage) {
+	PointerBucket := tx.Bucket([]byte("pointer"))
+	if PointerBucket == nil {
+		return
+	}
+	pdata := PointerBucket.Get(post.DBKey())
+	if pdata == nil {
+		return
+	}
+	p := Pointer{}
+	p.Unmarshal(pdata)
+	FeedsBucket := tx.Bucket([]byte("feeds"))
+	if FeedsBucket == nil {
+		return
+	}
+	FeedBucket := FeedsBucket.Bucket(p.Author)
+	if FeedBucket == nil {
+		return
+	}
+	LogBucket := FeedBucket.Bucket([]byte("log"))
+	if LogBucket == nil {
+		return
+	}
+	msgdata := LogBucket.Get(itob(p.Sequence))
+	if msgdata == nil {
+		return
+	}
+	m = DecompressMessage(msgdata)
+	return
+}
+
 var AddMessageHooks = map[string]func(m *SignedMessage, tx *bolt.Tx) error{}
 
 func (f *Feed) AddMessage(m *SignedMessage) error {
@@ -368,6 +399,29 @@ func (ds *DataStore) Rebuild(module string) {
 	log.Println("Reindexed", count, "messages")
 }
 
+func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*SignedMessage) {
+	ds.db.View(func(tx *bolt.Tx) error {
+		LogBucket := tx.Bucket([]byte("log"))
+		if LogBucket == nil {
+			return nil
+		}
+		cur := LogBucket.Cursor()
+		_, val := cur.Last()
+		for len(msgs) < num {
+			if val == nil {
+				break
+			}
+			msg := ds.Get(tx, DBRef(val))
+			if _, ok := filter[msg.Author]; ok {
+				msgs = append(msgs, msg)
+			}
+			_, val = cur.Prev()
+		}
+		return nil
+	})
+	return
+}
+
 func (f *Feed) PublishMessage(body interface{}) error {
 	content, _ := json.Marshal(body)
 
@@ -419,6 +473,35 @@ func (f *Feed) Latest() (m *SignedMessage) {
 		cur := FeedLogBucket.Cursor()
 		_, val := cur.Last()
 		m = DecompressMessage(val)
+		return nil
+	})
+	return
+}
+
+func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
+	f.store.db.View(func(tx *bolt.Tx) error {
+		FeedsBucket := tx.Bucket([]byte("feeds"))
+		if FeedsBucket == nil {
+			return nil
+		}
+		FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
+		if FeedBucket == nil {
+			return nil
+		}
+		FeedLogBucket := FeedBucket.Bucket([]byte("log"))
+		if FeedLogBucket == nil {
+			return nil
+		}
+		cur := FeedLogBucket.Cursor()
+		_, val := cur.Last()
+		for l1 := 0; l1 < num; l1++ {
+			if val == nil {
+				break
+			}
+			msg := DecompressMessage(val)
+			msgs = append(msgs, msg)
+			_, val = cur.Prev()
+		}
 		return nil
 	})
 	return

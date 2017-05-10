@@ -1,5 +1,6 @@
+{{Avatar .Message.Author}}
 {{if eq .Message.Author .Content.Link}}
-{{if .Content.Name}}{{.Content.Link}} identifies as {{.Content.Name}}{{end}}
+self identifies as {{.Content.Name}}
 {{else}}
-{{if .Content.Name}}{{.Message.Author}} identifies {{.Content.Link}} as {{.Content.Name}}{{end}}
+identifies {{.Content.Link}} as {{.Content.Name}}
 {{end}}

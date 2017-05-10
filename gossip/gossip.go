@@ -64,8 +64,8 @@ func init() {
 		}
 		return nil
 	}
-	ssb.MessageTypes["pub"] = func() interface{} {
-		return &PubAnnounce{}
+	ssb.MessageTypes["pub"] = func(mb ssb.MessageBody) interface{} {
+		return &PubAnnounce{MessageBody: mb}
 	}
 
 	ssb.RegisterInit(func(ds *ssb.DataStore) {
