@@ -1,14 +1,23 @@
 {{if not .Embedded}}
 {{if .Content.Branch.IsMessage}}
 <a href="/post?id={{.Content.Root}}">View full thread</a><br>
-<div style="color:grey; border-left: 1px solid black; padding-left: 20px;">
+<div class="well" style="background: #404040;">
 {{$prior := GetMessage .Content.Branch}}{{RenderContent $prior}}
 </div>
 {{end}}
 {{end}}
-<sub style="float: right;"><a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}<br></a>
-{{if ne .Content.Channel ""}}#{{.Content.Channel}}{{end}}
-{{$votes := GetVotes .Message.Key}}<span style="float: right;">{{len $votes}} Votes</span>
-</sub>
-{{Avatar .Message.Author}}
+<div class="container-fluid"><div class="row">
+<div class="col-sm-9">{{Avatar .Message.Author}}</div>
+<div class="col-sm-3">
+<a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}</a><br>
+<div class="row">
+<div class="col-xs-8">
+{{if ne .Content.Channel ""}}<a href="/channel?channel={{urlquery .Content.Channel}}">#{{.Content.Channel}}</a>{{end}}
+</div>
+<div class="col-xs-4" style="text-align: right;">
+{{$votes := GetVotes .Message.Key}}{{len $votes}} Votes
+</div>
+</div>
+</div>
+</div></div>
 {{Markdown .Content.Text}}

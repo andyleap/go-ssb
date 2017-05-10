@@ -2,7 +2,6 @@ package channels
 
 import (
 	"encoding/binary"
-	"fmt"
 	"time"
 
 	"github.com/andyleap/go-ssb"
@@ -61,7 +60,6 @@ func init() {
 }
 
 func GetChannelLatest(ds *ssb.DataStore, channel string, num int) (msgs []*ssb.SignedMessage) {
-	fmt.Println(channel, num, ds.DB())
 	ds.DB().View(func(tx *bolt.Tx) error {
 		channelsBucket := tx.Bucket([]byte("channels"))
 		if channelsBucket == nil {

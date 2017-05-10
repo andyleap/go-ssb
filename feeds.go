@@ -2,7 +2,6 @@ package ssb
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -113,6 +112,8 @@ type Feed struct {
 	SeqLock   sync.Mutex
 
 	addChan chan *SignedMessage
+
+	waiting map[int]*SignedMessage
 }
 
 type Pointer struct {
@@ -168,10 +169,27 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 	if feedID.Type != RefFeed {
 		return nil
 	}
-	feed := &Feed{store: ds, ID: feedID, Topic: NewMessageTopic(), addChan: make(chan *SignedMessage, 10)}
+	feed := &Feed{store: ds, ID: feedID, Topic: NewMessageTopic(), addChan: make(chan *SignedMessage, 10), waiting: map[int]*SignedMessage{}}
 	go func() {
 		for m := range feed.addChan {
-			feed.addMessage(m)
+			feed.SeqLock.Lock()
+			curSeq := feed.LatestSeq
+			feed.SeqLock.Unlock()
+			if curSeq >= m.Sequence {
+				continue
+			}
+			feed.waiting[m.Sequence] = m
+
+			for {
+				feed.SeqLock.Lock()
+				next, ok := feed.waiting[feed.LatestSeq+1]
+				feed.SeqLock.Unlock()
+				if !ok {
+					break
+				}
+				delete(feed.waiting, feed.LatestSeq+1)
+				feed.addMessage(next)
+			}
 		}
 	}()
 	m := feed.Latest()
@@ -270,7 +288,8 @@ func (f *Feed) addMessage(m *SignedMessage) error {
 	}
 	err := m.Verify(f)
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		fmt.Print("-")
 		return err
 	}
 	err = f.store.db.Update(func(tx *bolt.Tx) error {
@@ -423,7 +442,7 @@ func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*S
 }
 
 func (f *Feed) PublishMessage(body interface{}) error {
-	content, _ := json.Marshal(body)
+	content, _ := Encode(body)
 
 	m := &Message{
 		Author:    f.ID,

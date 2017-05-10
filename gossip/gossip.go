@@ -104,6 +104,7 @@ func init() {
 				conn.Send(&codec.Packet{
 					Req:    -req,
 					Type:   codec.JSON,
+					Body:   []byte("true"),
 					Stream: true,
 					EndErr: true,
 				})
@@ -118,7 +119,7 @@ func init() {
 			i := 0
 			for feed := range graph.GetFollows(ds, ds.PrimaryRef, 2) {
 				go func(feed ssb.Ref, i int) {
-					time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+					time.Sleep(time.Duration(i) * 1 * time.Millisecond)
 					f := ds.GetFeed(feed)
 					if f == nil {
 						return
@@ -130,11 +131,13 @@ func init() {
 					go func() {
 						reply := func(p *codec.Packet) {
 							if p.Type != codec.JSON {
+								fmt.Println(p, string(p.Body))
 								return
 							}
 							var m *ssb.SignedMessage
 							err := json.Unmarshal(p.Body, &m)
 							if err != nil {
+								fmt.Println(err, p, string(p.Body))
 								return
 							}
 							f.AddMessage(m)

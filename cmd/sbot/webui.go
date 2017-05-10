@@ -1,13 +1,14 @@
 package main
 
 import (
-	"net/url"
-	"io"
 	"bytes"
 	"html/template"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -16,11 +17,11 @@ import (
 	"github.com/andyleap/boltinspect"
 
 	"github.com/andyleap/go-ssb"
+	"github.com/andyleap/go-ssb/blobs"
 	"github.com/andyleap/go-ssb/channels"
+	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/search"
 	"github.com/andyleap/go-ssb/social"
-	"github.com/andyleap/go-ssb/blobs"
-	"github.com/andyleap/go-ssb/graph"
 )
 
 var ContentTemplates = template.New("content")
@@ -29,17 +30,48 @@ type SSBRenderer struct {
 	blackfriday.Renderer
 }
 
+func (ssbr *SSBRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {
+	r := ssb.ParseRef(string(link))
+	switch r.Type {
+	case ssb.RefBlob:
+		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
+	case ssb.RefMessage:
+		link = []byte("/post?id=" + url.QueryEscape(r.String()))
+	case ssb.RefFeed:
+		link = []byte("/feed?id=" + url.QueryEscape(r.String()))
+	}
+	if link[0] == '#' {
+		link = []byte("/channel?channel=" + url.QueryEscape(string(link[1:])))
+	}
+	ssbr.Renderer.AutoLink(out, link, kind)
+}
+func (ssbr *SSBRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
+	r := ssb.ParseRef(string(link))
+	switch r.Type {
+	case ssb.RefBlob:
+		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
+	case ssb.RefMessage:
+		link = []byte("/post?id=" + url.QueryEscape(r.String()))
+	case ssb.RefFeed:
+		link = []byte("/feed?id=" + url.QueryEscape(r.String()))
+	}
+	if link[0] == '#' {
+		link = []byte("/channel?channel=" + url.QueryEscape(string(link[1:])))
+	}
+	ssbr.Renderer.Link(out, link, title, content)
+}
+
 func (ssbr *SSBRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {
 	r := ssb.ParseRef(string(link))
 	switch r.Type {
-		case ssb.RefBlob:
+	case ssb.RefBlob:
 		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
 	}
 	ssbr.Renderer.Image(out, link, title, alt)
 }
 
 func RenderMarkdown(input []byte) []byte {
-commonHtmlFlags := 0 |
+	commonHtmlFlags := 0 |
 		blackfriday.HTML_USE_XHTML |
 		blackfriday.HTML_USE_SMARTYPANTS |
 		blackfriday.HTML_SMARTYPANTS_FRACTIONS |
@@ -71,14 +103,15 @@ func init() {
 				return ""
 			}
 			var a *social.About
-datastore.DB().View(func(tx *bolt.Tx) error {
+			datastore.DB().View(func(tx *bolt.Tx) error {
 				a = social.GetAbout(tx, ref)
 				return nil
 			})
 			buf := &bytes.Buffer{}
-			err := ContentTemplates.ExecuteTemplate(buf, "avatar.tpl", struct{
-			About *social.About
-			Ref ssb.Ref}{a, ref})
+			err := ContentTemplates.ExecuteTemplate(buf, "avatar.tpl", struct {
+				About *social.About
+				Ref   ssb.Ref
+			}{a, ref})
 			if err != nil {
 				log.Println(err)
 			}
@@ -122,44 +155,12 @@ datastore.DB().View(func(tx *bolt.Tx) error {
 			if err != nil {
 				log.Println(err)
 			}
-			return template.HTML(buf.String())
+			return template.HTML("<!-- " + t + " --!>" + buf.String())
 		},
 	}).ParseGlob("templates/content/*.tpl"))
 }
 
-var ChannelTemplate = template.Must(template.New("channel").Funcs(template.FuncMap{
-	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
-		t, md := m.DecodeMessage()
-		buf := &bytes.Buffer{}
-		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message  *ssb.SignedMessage
-			Content  interface{}
-			Embedded bool
-		}{m, md, false})
-		if err != nil {
-			log.Println(err)
-		}
-		return template.HTML(buf.String())
-	},
-}).Parse(`
-<html>
-<head>
-</head>
-<body>
-<form action="/publish/post" method="post">
-<textarea name="text"></textarea><br>
-<input type="hidden" name="channel" value="{{.Channel}}">
-<input type="hidden" name="returnto" value="/channel?channel={{.Channel}}">
-<input type="submit" value="Publish!">
-</form>
-<hr>
-{{range .Messages}}
-{{RenderContent .}}<hr>
-{{end}}
-</body>
-</html>`))
-
-var IndexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
+var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
 		t, md := m.DecodeMessage()
 		buf := &bytes.Buffer{}
@@ -173,100 +174,11 @@ var IndexTemplate = template.Must(template.New("index").Funcs(template.FuncMap{
 		}
 		return template.HTML("<!-- " + t + " --!>" + buf.String())
 	},
-}).Parse(`
-<html>
-<head>
-</head>
-<body>
-<form action="/publish/post" method="post">
-<textarea name="text"></textarea><br>
-<input type="hidden" name="returnto" value="/">
-<input type="submit" value="Publish!">
-</form>
-<hr>
-{{range .Messages}}
-{{RenderContent .}}<hr>
-{{end}}
-</body>
-</html>`))
-
-var SearchTemplate = template.Must(template.New("search").Funcs(template.FuncMap{
-	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
-		t, md := m.DecodeMessage()
-		buf := &bytes.Buffer{}
-		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message  *ssb.SignedMessage
-			Content  interface{}
-			Embedded bool
-		}{m, md, false})
-		if err != nil {
-			log.Println(err)
-		}
-		return template.HTML(buf.String())
-	},
-}).Parse(`
-<html>
-<head>
-</head>
-<body>
-{{range .Messages}}
-{{RenderContent .}}<hr>
-{{end}}
-</body>
-</html>`))
-
-var AdminTemplate = template.Must(template.New("admin").Parse(`
-<html>
-<head>
-</head>
-<body>
-<table>
-<tr><th>key</th><th>size</th></tr>
-{{range $b, $size := .DBSize}}
-<tr><td>{{$b}}</td><td style="text-align: right;">{{$size}}</td>
-{{end}}
-</table><br>
-<a href="/rebuild?module=all">all</a><br>
-{{range .Modules}}
-<a href="/rebuild?module={{.}}">{{.}}</a><br>
-{{end}}
-</body>
-</html>`))
-
-var PostTemplate = template.Must(template.New("post").Funcs(template.FuncMap{
-	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
-		t, md := m.DecodeMessage()
-		buf := &bytes.Buffer{}
-		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message  *ssb.SignedMessage
-			Content  interface{}
-			Embedded bool
-		}{m, md, false})
-		if err != nil {
-			log.Println(err)
-		}
-		return template.HTML(buf.String())
-	},
-}).Parse(`
-<html>
-<head>
-</head>
-<body>
-{{RenderContent .Message}}
-<hr>
-<form action="/publish/post" method="post">
-<textarea name="text"></textarea><br>
-<input type="hidden" name="channel" value="{{.Content.Channel}}">
-<input type="hidden" name="branch" value="{{.Message.Key}}">
-<input type="hidden" name="root" value="{{if eq .Content.Root.Type 0}}{{.Message.Key}}{{else}}{{.Content.Root}}{{end}}">
-<input type="hidden" name="returnto" value="/post?id={{.Message.Key | urlquery}}">
-<input type="submit" value="Publish!">
-</form>
-</body>
-</html>`))
+}).ParseGlob("templates/pages/*.tpl"))
 
 func init() {
 	log.Println(ContentTemplates.DefinedTemplates())
+	log.Println(PageTemplates.DefinedTemplates())
 }
 
 func RegisterWebui() {
@@ -274,7 +186,10 @@ func RegisterWebui() {
 
 	http.HandleFunc("/bolt", bi.InspectEndpoint)
 
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+
 	http.HandleFunc("/", Index)
+	http.Handle("/favicon.ico", http.NotFoundHandler())
 	http.HandleFunc("/channel", Channel)
 	http.HandleFunc("/post", Post)
 	http.HandleFunc("/search", Search)
@@ -282,10 +197,28 @@ func RegisterWebui() {
 
 	http.HandleFunc("/admin", Admin)
 	http.HandleFunc("/rebuild", Rebuild)
-	
+
 	http.HandleFunc("/blob", Blob)
+	http.HandleFunc("/blobinfo", BlobInfo)
+
+	http.HandleFunc("/raw", Raw)
+
+	http.HandleFunc("/upload", Upload)
 
 	go http.ListenAndServe(":9823", nil)
+}
+
+func Upload(rw http.ResponseWriter, req *http.Request) {
+	f, _, err := req.FormFile("upload")
+	if err != nil {
+		log.Println(err)
+		PageTemplates.ExecuteTemplate(rw, "upload.tpl", nil)
+		return
+	}
+	buf, _ := ioutil.ReadAll(f)
+	bs := datastore.ExtraData("blobStore").(*blobs.BlobStore)
+	ref := bs.Add(buf)
+	http.Redirect(rw, req, "/blobinfo?id="+url.QueryEscape(ref.String()), http.StatusFound)
 }
 
 func PublishPost(rw http.ResponseWriter, req *http.Request) {
@@ -338,7 +271,7 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 	for module := range ssb.AddMessageHooks {
 		modules = append(modules, module)
 	}
-	err := AdminTemplate.Execute(rw, struct {
+	err := PageTemplates.ExecuteTemplate(rw, "admin.tpl", struct {
 		Modules []string
 		DBSize  map[string]int
 	}{
@@ -352,7 +285,7 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 
 func Index(rw http.ResponseWriter, req *http.Request) {
 	messages := datastore.LatestCountFiltered(100, graph.GetFollows(datastore, datastore.PrimaryRef, 1))
-	err := IndexTemplate.Execute(rw, struct {
+	err := PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
 	}{
 		messages,
@@ -379,7 +312,7 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		Index(rw, req)
 		return
 	}
-	err := PostTemplate.Execute(rw, struct {
+	err := PageTemplates.ExecuteTemplate(rw, "post.tpl", struct {
 		Message *ssb.SignedMessage
 		Content *social.Post
 	}{
@@ -398,7 +331,7 @@ func Channel(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	messages := channels.GetChannelLatest(datastore, channel, 100)
-	err := ChannelTemplate.Execute(rw, struct {
+	err := PageTemplates.ExecuteTemplate(rw, "channel.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Channel  string
 	}{
@@ -416,8 +349,13 @@ func Search(rw http.ResponseWriter, req *http.Request) {
 		Index(rw, req)
 		return
 	}
+	if query[0] == '#' {
+		http.Redirect(rw, req, "/channel?channel="+query[1:], http.StatusFound)
+		return
+	}
+
 	messages := search.Search(datastore, query, 50)
-	err := SearchTemplate.Execute(rw, struct {
+	err := PageTemplates.ExecuteTemplate(rw, "search.tpl", struct {
 		Messages []*ssb.SignedMessage
 	}{
 		messages,
@@ -442,4 +380,32 @@ func Blob(rw http.ResponseWriter, req *http.Request) {
 	rc := bs.Get(r)
 	defer rc.Close()
 	io.Copy(rw, rc)
+}
+
+func BlobInfo(rw http.ResponseWriter, req *http.Request) {
+	id := req.FormValue("id")
+	if id == "" {
+		http.NotFound(rw, req)
+		return
+	}
+	r := ssb.ParseRef(id)
+	PageTemplates.ExecuteTemplate(rw, "blob.tpl", struct {
+		ID ssb.Ref
+	}{
+		ID: r,
+	})
+}
+
+func Raw(rw http.ResponseWriter, req *http.Request) {
+	id := req.FormValue("id")
+	if id == "" {
+		http.NotFound(rw, req)
+		return
+	}
+	r := ssb.ParseRef(id)
+	m := datastore.Get(nil, r)
+	if m != nil {
+		buf := m.Encode()
+		rw.Write(buf)
+	}
 }

@@ -68,6 +68,19 @@ func (bs *BlobStore) Has(r ssb.Ref) bool {
 	return false
 }
 
+func (bs *BlobStore) Size(r ssb.Ref) int64 {
+	hexhash := hex.EncodeToString(r.Raw())
+
+	if len(hexhash) < 2 {
+		return -1
+	}
+	pre, hexhash := hexhash[:2], hexhash[2:]
+	if s, err := os.Stat(filepath.Join(bs.Root, pre, hexhash)); !os.IsNotExist(err) {
+		return s.Size()
+	}
+	return -1
+}
+
 func (bs *BlobStore) WaitFor(r ssb.Ref) {
 	if bs.Has(r) {
 		return
@@ -162,9 +175,25 @@ func init() {
 			})
 		}
 		handlers["blobs.get"] = func(conn *muxrpc.Conn, req int32, rm json.RawMessage) {
-			var r ssb.Ref
-			args := []interface{}{&r}
+			var arg1 json.RawMessage
+			args := []interface{}{&arg1}
 			json.Unmarshal(rm, &args)
+			var r ssb.Ref
+			err := json.Unmarshal(arg1, &r)
+			if err != nil {
+				var robj struct {
+					Hash ssb.Ref `json:"hash"`
+					Key  ssb.Ref `json:"key"`
+				}
+				json.Unmarshal(arg1, &robj)
+				if robj.Key.Type != ssb.RefInvalid {
+					r = robj.Key
+				} else if robj.Hash.Type != ssb.RefInvalid {
+					r = robj.Hash
+				}
+			}
+
+			log.Println("Peer asking for ", r.String())
 			if !bs.Has(r) {
 				conn.Send(&codec.Packet{
 					Req:    -req,
@@ -178,7 +207,7 @@ func init() {
 			rc := bs.Get(r)
 			defer rc.Close()
 			buf := make([]byte, 1024)
-
+			log.Println("Sending", r.String())
 			for {
 				n, err := rc.Read(buf[:cap(buf)])
 				buf = buf[:n]
@@ -202,16 +231,41 @@ func init() {
 					log.Fatal(err)
 				}
 			}
+			log.Println("Sent", r.String())
 			conn.Send(&codec.Packet{
 				Req:    -req,
-				Type:   codec.Buffer,
 				Stream: true,
+				Type:   codec.JSON,
+				Body:   []byte("true"),
 				EndErr: true,
 			})
 		}
 		handlers["blobs.changes"] = func(conn *muxrpc.Conn, req int32, rm json.RawMessage) {
 		}
+
+		peerWants := map[*muxrpc.Conn]chan struct {
+			id  ssb.Ref
+			val int
+		}{}
+		var peerWantsLock sync.Mutex
+
 		handlers["blobs.createWants"] = func(conn *muxrpc.Conn, req int32, rm json.RawMessage) {
+			peerWantsLock.Lock()
+			c := peerWants[conn]
+			peerWantsLock.Unlock()
+
+			for ref := range c {
+				msg := map[string]int{}
+				msg[ref.id.String()] = ref.val
+				buf, _ := ssb.Encode(msg)
+				log.Println("Telling peer I have ", string(buf))
+				conn.Send(&codec.Packet{
+					Req:    -req,
+					Type:   codec.JSON,
+					Stream: true,
+					Body:   buf,
+				})
+			}
 		}
 		onConnects, ok := ds.ExtraData("muxrpcOnConnect").(map[string]func(conn *muxrpc.Conn))
 		if !ok {
@@ -221,6 +275,33 @@ func init() {
 		onConnects["blob"] = func(conn *muxrpc.Conn) {
 			bs.wantLock.Lock()
 			defer bs.wantLock.Unlock()
+			peerWantsLock.Lock()
+			c := make(chan struct {
+				id  ssb.Ref
+				val int
+			}, 10)
+			peerWants[conn] = c
+			peerWantsLock.Unlock()
+
+			go func() {
+				conn.Source("blobs.createWants", func(p *codec.Packet) {
+					var want map[ssb.Ref]int
+					json.Unmarshal(p.Body, &want)
+					for id, hopsize := range want {
+						if bs.Has(id) && hopsize < 0 {
+							log.Println("I do have ", id, "asked at", hopsize)
+							c <- struct {
+								id  ssb.Ref
+								val int
+							}{id, int(bs.Size(id))}
+						}
+					}
+				})
+				peerWantsLock.Lock()
+				delete(peerWants, conn)
+				peerWantsLock.Unlock()
+			}()
+
 			for r, w := range bs.want {
 				go func(r ssb.Ref, w *want) {
 					has := false
