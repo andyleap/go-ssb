@@ -5,8 +5,8 @@ import (
 )
 
 type MessageBody struct {
-	Type     string `json:"type"`
-	*Message `json:"-"`
+	Type    string   `json:"type"`
+	Message *Message `json:"-"`
 }
 
 var MessageTypes = map[string]func(mb MessageBody) interface{}{}

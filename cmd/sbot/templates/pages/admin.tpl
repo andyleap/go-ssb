@@ -11,10 +11,21 @@
 <tr><td>{{$b}}</td><td style="text-align: right;">{{$size}}</td>
 {{end}}
 </table><br>
-<a href="/rebuild?module=all">all</a><br>
+<a class="btn btn-default" href="/rebuild?module=all">all</a>
 {{range .Modules}}
-<a href="/rebuild?module={{.}}">{{.}}</a><br>
+<a class="btn btn-default" href="/rebuild?module={{.}}">{{.}}</a>
 {{end}}
+
+<div class="well">
+<form action="/gossip/add" method="post">
+<div class="form-group">
+<input type="text" name="host" class="form-control" placeholder="Host">
+<input type="text" name="port" class="form-control" placeholder="Port">
+<input type="text" name="key" class="form-control" placeholder="Key">
+<input type="submit" value="Add Peer" class="btn btn-primary">
+</div>
+</form>
+</div>
 </div>
 </body>
 </html>

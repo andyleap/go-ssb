@@ -17,11 +17,11 @@ type Image struct {
 
 type image struct {
 	Link   ssb.Ref `json:"link"`
-	Width  int     `json:"width"`
-	Height int     `json:"height"`
-	Name   string  `json:"name"`
-	Size   int     `json:"size"`
-	Type   string  `json:"type"`
+	Width  int     `json:"width,omitempty"`
+	Height int     `json:"height,omitempty"`
+	Name   string  `json:"name,omitempty"`
+	Size   int     `json:"size,omitempty"`
+	Type   string  `json:"type,omitempty"`
 }
 
 func (i *Image) UnmarshalJSON(b []byte) error {
@@ -49,7 +49,7 @@ type About struct {
 	ssb.MessageBody
 	About ssb.Ref `json:"about"`
 	Name  string  `json:"name,omitempty"`
-	Image Image   `json:"image,omitempty"`
+	Image *Image  `json:"image,omitempty"`
 }
 
 type Vote struct {
@@ -68,6 +68,12 @@ func init() {
 	ssb.RebuildClearHooks["social"] = func(tx *bolt.Tx) error {
 		tx.DeleteBucket([]byte("votes"))
 		tx.DeleteBucket([]byte("threads"))
+		b, _ := tx.CreateBucketIfNotExists([]byte("feeds"))
+		b.ForEach(func(k, v []byte) error {
+			b.Bucket(k).Delete([]byte("about"))
+			return nil
+		})
+
 		return nil
 	}
 	ssb.AddMessageHooks["social"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
@@ -90,7 +96,7 @@ func init() {
 				if mba.Name != "" {
 					a.Name = mba.Name
 				}
-				if mba.Image.Link.Type != ssb.RefInvalid {
+				if mba.Image != nil {
 					a.Image = mba.Image
 				}
 				buf, err := json.Marshal(a)

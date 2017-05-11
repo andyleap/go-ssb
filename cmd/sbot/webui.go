@@ -20,6 +20,7 @@ import (
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/blobs"
 	"github.com/andyleap/go-ssb/channels"
+	"github.com/andyleap/go-ssb/gossip"
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/search"
 	"github.com/andyleap/go-ssb/social"
@@ -218,9 +219,13 @@ func RegisterWebui() {
 	http.HandleFunc("/post", Post)
 	http.HandleFunc("/search", Search)
 	http.HandleFunc("/publish/post", PublishPost)
+	http.HandleFunc("/publish/about", PublishAbout)
+	http.HandleFunc("/gossip/add", GossipAdd)
 
 	http.HandleFunc("/feed", FeedPage)
 	http.HandleFunc("/thread", ThreadPage)
+
+	http.HandleFunc("/profile", Profile)
 
 	http.HandleFunc("/admin", Admin)
 	http.HandleFunc("/rebuild", Rebuild)
@@ -257,6 +262,55 @@ func PublishPost(rw http.ResponseWriter, req *http.Request) {
 	p.Text = req.FormValue("text")
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
+}
+
+func PublishAbout(rw http.ResponseWriter, req *http.Request) {
+	p := &social.About{}
+	p.Type = "about"
+	p.About = datastore.PrimaryRef
+	p.Name = req.FormValue("name")
+	f, _, err := req.FormFile("upload")
+	if err == nil {
+		buf, _ := ioutil.ReadAll(f)
+		bs := datastore.ExtraData("blobStore").(*blobs.BlobStore)
+		ref := bs.Add(buf)
+		p.Image = &social.Image{}
+		p.Image.Link = ref
+	}
+	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	http.Redirect(rw, req, "/profile", http.StatusSeeOther)
+}
+
+func GossipAdd(rw http.ResponseWriter, req *http.Request) {
+	host := req.FormValue("host")
+	if host == "" {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	portStr := req.FormValue("port")
+	if portStr == "" {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	port, err := strconv.ParseInt(portStr, 10, 64)
+	if err != nil {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	key := ssb.ParseRef(req.FormValue("key"))
+	if key.Type != ssb.RefFeed {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+
+	pub := gossip.Pub{
+		Host: host,
+		Port: int(port),
+		Link: key,
+	}
+	gossip.AddPub(datastore, pub)
+
+	http.Redirect(rw, req, "/admin", http.StatusSeeOther)
 }
 
 func Rebuild(rw http.ResponseWriter, req *http.Request) {
@@ -428,6 +482,24 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		message,
 		p,
 		votes,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func Profile(rw http.ResponseWriter, req *http.Request) {
+	var about *social.About
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		about = social.GetAbout(tx, datastore.PrimaryRef)
+		return nil
+	})
+	err := PageTemplates.ExecuteTemplate(rw, "profile.tpl", struct {
+		Profile *social.About
+		Ref     ssb.Ref
+	}{
+		about,
+		datastore.PrimaryRef,
 	})
 	if err != nil {
 		log.Println(err)

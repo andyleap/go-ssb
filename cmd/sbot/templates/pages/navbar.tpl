@@ -7,6 +7,7 @@
       <ul class="nav navbar-nav">
         <li><a href="/upload">Upload</a></li>
       </ul>
+      
 <form class="navbar-form navbar-right" role="search" method="GET" action="/search">
   <div class="input-group">
     <input type="text" class="form-control" placeholder="Search" name="q">
@@ -15,5 +16,8 @@
 	</span>
   </div>
 </form>
+<ul class="nav navbar-nav navbar-right">
+        <li><a href="/profile">Profile</a></li>
+      </ul>
   </div><!-- /.container-fluid -->
 </nav>
