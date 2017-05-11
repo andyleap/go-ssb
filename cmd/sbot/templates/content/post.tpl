@@ -1,8 +1,8 @@
-{{if not .Embedded}}
+{{if ge .Levels 0}}
 {{if .Content.Branch.IsMessage}}
-<a href="/post?id={{.Content.Root}}">View full thread</a><br>
+<a href="/thread?id={{.Content.Root}}">View full thread</a><br>
 <div class="well" style="background: #404040;">
-{{$prior := GetMessage .Content.Branch}}{{RenderContent $prior}}
+{{$prior := GetMessage .Content.Branch}}{{RenderContent $prior .Levels}}
 </div>
 {{end}}
 {{end}}

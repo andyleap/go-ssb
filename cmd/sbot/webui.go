@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -134,24 +135,24 @@ func init() {
 		"GetMessage": func(ref ssb.Ref) *ssb.SignedMessage {
 			return datastore.Get(nil, ref)
 		},
-		"GetVotes": func(ref ssb.Ref) (votes []*social.Vote) {
+		"GetVotes": func(ref ssb.Ref) (votes []*ssb.SignedMessage) {
 			datastore.DB().View(func(tx *bolt.Tx) error {
 				votes = social.GetVotes(tx, ref)
 				return nil
 			})
 			return
 		},
-		"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+		"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 			if m == nil {
 				return ""
 			}
 			t, md := m.DecodeMessage()
 			buf := &bytes.Buffer{}
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-				Message  *ssb.SignedMessage
-				Content  interface{}
-				Embedded bool
-			}{m, md, true})
+				Message *ssb.SignedMessage
+				Content interface{}
+				Levels  int
+			}{m, md, levels - 1})
 			if err != nil {
 				log.Println(err)
 			}
@@ -161,18 +162,35 @@ func init() {
 }
 
 var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
-	"RenderContent": func(m *ssb.SignedMessage) template.HTML {
+	"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 		t, md := m.DecodeMessage()
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
-			Message  *ssb.SignedMessage
-			Content  interface{}
-			Embedded bool
-		}{m, md, false})
+			Message *ssb.SignedMessage
+			Content interface{}
+			Levels  int
+		}{m, md, levels - 1})
 		if err != nil {
 			log.Println(err)
 		}
 		return template.HTML("<!-- " + t + " --!>" + buf.String())
+	},
+	"RenderContentTemplate": func(m *ssb.SignedMessage, levels int, tpl string) template.HTML {
+		t, md := m.DecodeMessage()
+		buf := &bytes.Buffer{}
+		err := ContentTemplates.ExecuteTemplate(buf, tpl+".tpl", struct {
+			Message *ssb.SignedMessage
+			Content interface{}
+			Levels  int
+		}{m, md, levels - 1})
+		if err != nil {
+			log.Println(err)
+		}
+		return template.HTML("<!-- " + t + " --!>" + buf.String())
+	},
+	"Decode": func(m *ssb.SignedMessage) interface{} {
+		_, mb := m.DecodeMessage()
+		return mb
 	},
 }).ParseGlob("templates/pages/*.tpl"))
 
@@ -194,6 +212,9 @@ func RegisterWebui() {
 	http.HandleFunc("/post", Post)
 	http.HandleFunc("/search", Search)
 	http.HandleFunc("/publish/post", PublishPost)
+
+	http.HandleFunc("/feed", FeedPage)
+	http.HandleFunc("/thread", ThreadPage)
 
 	http.HandleFunc("/admin", Admin)
 	http.HandleFunc("/rebuild", Rebuild)
@@ -284,10 +305,86 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
-	messages := datastore.LatestCountFiltered(100, graph.GetFollows(datastore, datastore.PrimaryRef, 1))
+	distStr := req.FormValue("dist")
+	if distStr == "" {
+		distStr = "1"
+	}
+	dist, _ := strconv.ParseInt(distStr, 10, 64)
+	var messages []*ssb.SignedMessage
+	if dist == 0 {
+		f := datastore.GetFeed(datastore.PrimaryRef)
+		messages = f.LatestCount(100)
+	} else {
+		messages = datastore.LatestCountFiltered(100, graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
+	}
 	err := PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
 	}{
+		messages,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func FeedPage(rw http.ResponseWriter, req *http.Request) {
+	feedRaw := req.FormValue("id")
+	distStr := req.FormValue("dist")
+	if distStr == "" {
+		distStr = "0"
+	}
+	feed := ssb.ParseRef(feedRaw)
+	dist, _ := strconv.ParseInt(distStr, 10, 64)
+	var messages []*ssb.SignedMessage
+	if dist == 0 {
+		f := datastore.GetFeed(feed)
+		messages = f.LatestCount(100)
+	} else {
+		messages = datastore.LatestCountFiltered(100, graph.GetFollows(datastore, feed, int(dist)))
+	}
+	err := PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
+		Messages []*ssb.SignedMessage
+	}{
+		messages,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func ThreadPage(rw http.ResponseWriter, req *http.Request) {
+	threadRaw := req.FormValue("id")
+	threadRef := ssb.ParseRef(threadRaw)
+
+	root := datastore.Get(nil, threadRef)
+
+	channel := ""
+
+	_, p := root.DecodeMessage()
+
+	if post, ok := p.(*social.Post); ok {
+		channel = post.Channel
+	}
+	var messages []*ssb.SignedMessage
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		messages = social.GetThread(tx, threadRef)
+		return nil
+	})
+
+	reply := root.Key()
+	if len(messages) > 0 {
+		reply = messages[len(messages)-1].Key()
+	}
+
+	err := PageTemplates.ExecuteTemplate(rw, "thread.tpl", struct {
+		Root     *ssb.SignedMessage
+		Channel  string
+		Reply    ssb.Ref
+		Messages []*ssb.SignedMessage
+	}{
+		root,
+		channel,
+		reply,
 		messages,
 	})
 	if err != nil {
@@ -312,12 +409,19 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		Index(rw, req)
 		return
 	}
+	var votes []*ssb.SignedMessage
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		votes = social.GetVotes(tx, message.Key())
+		return nil
+	})
 	err := PageTemplates.ExecuteTemplate(rw, "post.tpl", struct {
 		Message *ssb.SignedMessage
 		Content *social.Post
+		Votes   []*ssb.SignedMessage
 	}{
 		message,
 		p,
+		votes,
 	})
 	if err != nil {
 		log.Println(err)

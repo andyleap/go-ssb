@@ -1,8 +1,11 @@
 <html>
 <head>
+{{template "header.tpl"}}
 </head>
 <body>
-<table>
+<div class="container">
+{{template "navbar.tpl"}}
+<table class="table table-striped table-bordered table-hover">
 <tr><th>key</th><th>size</th></tr>
 {{range $b, $size := .DBSize}}
 <tr><td>{{$b}}</td><td style="text-align: right;">{{$size}}</td>
@@ -12,5 +15,6 @@
 {{range .Modules}}
 <a href="/rebuild?module={{.}}">{{.}}</a><br>
 {{end}}
+</div>
 </body>
 </html>

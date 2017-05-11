@@ -1,6 +1,6 @@
 {{Avatar .Message.Author}}
-{{if eq .Message.Author .Content.Link}}
+{{if eq .Message.Author.String .Content.About.String}}
 self identifies as {{.Content.Name}}
 {{else}}
-identifies {{.Content.Link}} as {{.Content.Name}}
+identifies <a href="/feed?id={{urlquery .Content.About}}">{{.Content.About}}</a> as {{.Content.Name}}
 {{end}}

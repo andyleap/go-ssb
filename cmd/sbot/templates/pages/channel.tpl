@@ -18,7 +18,7 @@
 
 {{range .Messages}}
 <div class="well">
-{{RenderContent .}}
+{{RenderContent . 1}}
 </div>
 {{end}}
 </div>

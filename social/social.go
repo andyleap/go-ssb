@@ -67,6 +67,7 @@ func init() {
 	ssb.MessageTypes["vote"] = func(mb ssb.MessageBody) interface{} { return &Vote{MessageBody: mb} }
 	ssb.RebuildClearHooks["social"] = func(tx *bolt.Tx) error {
 		tx.DeleteBucket([]byte("votes"))
+		tx.DeleteBucket([]byte("threads"))
 		return nil
 	}
 	ssb.AddMessageHooks["social"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
@@ -120,6 +121,26 @@ func init() {
 				return err
 			}
 		}
+		if post, ok := mb.(*Post); ok {
+			if post.Root.Type != ssb.RefInvalid {
+				ThreadsBucket, err := tx.CreateBucketIfNotExists([]byte("threads"))
+				if err != nil {
+					return err
+				}
+				threadRaw := ThreadsBucket.Get(post.Root.DBKey())
+				var thread []ssb.Ref
+				if threadRaw != nil {
+					json.Unmarshal(threadRaw, &thread)
+				}
+				thread = append(thread, m.Key())
+				buf, _ := json.Marshal(thread)
+
+				err = ThreadsBucket.Put(post.Root.DBKey(), buf)
+				if err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 }
@@ -141,7 +162,7 @@ func GetAbout(tx *bolt.Tx, ref ssb.Ref) (a *About) {
 	return
 }
 
-func GetVotes(tx *bolt.Tx, ref ssb.Ref) []*Vote {
+func GetVotes(tx *bolt.Tx, ref ssb.Ref) []*ssb.SignedMessage {
 	VotesBucket := tx.Bucket([]byte("votes"))
 	if VotesBucket == nil {
 		return nil
@@ -151,16 +172,34 @@ func GetVotes(tx *bolt.Tx, ref ssb.Ref) []*Vote {
 	if votesRaw != nil {
 		json.Unmarshal(votesRaw, &voteRefs)
 	}
-	votes := make([]*Vote, 0, len(voteRefs))
+	votes := make([]*ssb.SignedMessage, 0, len(voteRefs))
 	for _, r := range voteRefs {
 		msg := ssb.GetMsg(tx, r)
 		if msg == nil {
 			continue
 		}
-		_, v := msg.DecodeMessage()
-		if vote, ok := v.(*Vote); ok {
-			votes = append(votes, vote)
-		}
+		votes = append(votes, msg)
 	}
 	return votes
+}
+
+func GetThread(tx *bolt.Tx, ref ssb.Ref) []*ssb.SignedMessage {
+	ThreadsBucket := tx.Bucket([]byte("threads"))
+	if ThreadsBucket == nil {
+		return nil
+	}
+	threadsRaw := ThreadsBucket.Get(ref.DBKey())
+	var threadRefs []ssb.Ref
+	if threadsRaw != nil {
+		json.Unmarshal(threadsRaw, &threadRefs)
+	}
+	thread := make([]*ssb.SignedMessage, 0, len(threadRefs))
+	for _, r := range threadRefs {
+		msg := ssb.GetMsg(tx, r)
+		if msg == nil {
+			continue
+		}
+		thread = append(thread, msg)
+	}
+	return thread
 }

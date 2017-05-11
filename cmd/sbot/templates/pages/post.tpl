@@ -8,7 +8,15 @@
 {{template "navbar.tpl"}}
 
 <div class="well">
-{{RenderContent .Message}}
+{{RenderContent .Message 1}}
+<div class="container-fluid vote-container">
+{{range .Votes}}
+{{$vote := Decode .}}
+<div class="vote {{if gt $vote.Vote.Value 0}}vote-up{{else if lt $vote.Vote.Value 0}}vote-down{{end}}">
+{{RenderContentTemplate . 0 "vote-simple"}}
+</div>
+{{end}}
+</div>
 </div>
 
 <div class="well">
