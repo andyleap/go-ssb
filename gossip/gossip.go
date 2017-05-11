@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	"github.com/andyleap/go-ssb/muxrpcManager"
 	"github.com/andyleap/muxrpc"
 	"github.com/andyleap/muxrpc/codec"
+
 	"github.com/cryptix/secretstream"
+	"github.com/cryptix/secretstream/secrethandshake"
 )
 
 type Pub struct {
@@ -40,7 +43,51 @@ func AddPub(ds *ssb.DataStore, pb Pub) {
 	})
 }
 
+func AcceptInvite(ds *ssb.DataStore, pb Pub, invite []byte) error {
+	if len(invite) != 32 {
+		return fmt.Errorf("Invite seed length wrong, got %d, expecting 32", len(invite))
+	}
+	keypair, err := secrethandshake.GenEdKeyPair(bytes.NewReader(invite))
+	fmt.Println(base64.StdEncoding.EncodeToString(keypair.Public[:]), ":", base64.StdEncoding.EncodeToString(keypair.Secret[:]))
+	if err != nil {
+		return err
+	}
+	c, err := secretstream.NewClient(*keypair, sbotAppKey)
+	if err != nil {
+		return err
+	}
+
+	var pubKey [32]byte
+	rawpubKey := pb.Link.Raw()
+	copy(pubKey[:], rawpubKey)
+
+	d, err := c.NewDialer(pubKey)
+	if err != nil {
+		return err
+	}
+	conn, err := d("tcp", fmt.Sprintf("%s:%d", pb.Host, pb.Port))
+	if err != nil {
+		return err
+	}
+	muxconn := muxrpc.New(conn, nil)
+	go muxconn.Handle()
+	useReq := struct {
+		Feed ssb.Ref `json:"feed"`
+	}{
+		ds.PrimaryRef,
+	}
+	err = muxconn.Call("invite.use", nil, useReq)
+	if err != nil {
+		return err
+	}
+	AddPub(ds, pb)
+	return nil
+}
+
+var sbotAppKey []byte
+
 func init() {
+	sbotAppKey, _ = base64.StdEncoding.DecodeString("1KHLiKZvAvjbY1ziZEHMXawbCEIM6qwjCDm3VYRan/s=")
 	ssb.RebuildClearHooks["gossip"] = func(tx *bolt.Tx) error {
 		tx.DeleteBucket([]byte("pubs"))
 		return nil
@@ -156,7 +203,6 @@ func init() {
 }
 
 func Replicate(ds *ssb.DataStore) {
-	sbotAppKey, _ := base64.StdEncoding.DecodeString("1KHLiKZvAvjbY1ziZEHMXawbCEIM6qwjCDm3VYRan/s=")
 	go func() {
 
 		sss, _ := secretstream.NewServer(*ds.PrimaryKey, sbotAppKey)
@@ -171,7 +217,7 @@ func Replicate(ds *ssb.DataStore) {
 				fmt.Println(err)
 				return
 			}
-			remPubKey := conn.RemoteAddr().(*secretstream.Addr).PubKey()
+			remPubKey := conn.RemoteAddr().(secretstream.Addr).PubKey()
 			remRef, _ := ssb.NewRef(ssb.RefFeed, remPubKey, ssb.RefAlgoEd25519)
 			go muxrpcManager.HandleConn(ds, remRef, conn)
 		}

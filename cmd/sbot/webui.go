@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -10,6 +11,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -221,6 +223,7 @@ func RegisterWebui() {
 	http.HandleFunc("/publish/post", PublishPost)
 	http.HandleFunc("/publish/about", PublishAbout)
 	http.HandleFunc("/gossip/add", GossipAdd)
+	http.HandleFunc("/gossip/accept", GossipAccept)
 
 	http.HandleFunc("/feed", FeedPage)
 	http.HandleFunc("/thread", ThreadPage)
@@ -309,6 +312,63 @@ func GossipAdd(rw http.ResponseWriter, req *http.Request) {
 		Link: key,
 	}
 	gossip.AddPub(datastore, pub)
+
+	http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+}
+
+func GossipAccept(rw http.ResponseWriter, req *http.Request) {
+	invite := req.FormValue("invite")
+	if invite == "" {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	parts := strings.Split(invite, "~")
+	if len(parts) != 2 {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	addrparts := strings.Split(parts[0], ":")
+	if len(addrparts) != 3 {
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	port, err := strconv.ParseInt(addrparts[1], 10, 64)
+	if err != nil {
+		log.Println(err)
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+	follow := req.FormValue("follow")
+
+	pub := gossip.Pub{
+		Host: addrparts[0],
+		Port: int(port),
+		Link: ssb.ParseRef(addrparts[2]),
+	}
+
+	seed, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		log.Println(err)
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+
+	err = gossip.AcceptInvite(datastore, pub, seed)
+
+	if err != nil {
+		log.Println(err)
+		http.Redirect(rw, req, "/admin", http.StatusSeeOther)
+		return
+	}
+
+	if follow == "follow" {
+		p := &graph.Contact{}
+		p.Type = "contact"
+		p.Contact = pub.Link
+		following := true
+		p.Following = &following
+		datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	}
 
 	http.Redirect(rw, req, "/admin", http.StatusSeeOther)
 }
