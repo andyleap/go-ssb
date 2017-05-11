@@ -147,6 +147,9 @@ func init() {
 				return ""
 			}
 			t, md := m.DecodeMessage()
+			if t == "" {
+				return template.HTML("<!-- BLANK --!>")
+			}
 			buf := &bytes.Buffer{}
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 				Message *ssb.SignedMessage
@@ -164,6 +167,9 @@ func init() {
 var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 	"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 		t, md := m.DecodeMessage()
+		if t == "" {
+			return template.HTML("<!-- BLANK --!>")
+		}
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 			Message *ssb.SignedMessage

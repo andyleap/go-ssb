@@ -5,13 +5,15 @@
     </div>
 
       <ul class="nav navbar-nav">
-        <li></li>
+        <li><a href="/upload">Upload</a></li>
       </ul>
 <form class="navbar-form navbar-right" role="search" method="GET" action="/search">
-  <div class="form-group">
+  <div class="input-group">
     <input type="text" class="form-control" placeholder="Search" name="q">
+	<span class="input-group-btn">
+      <button type="submit" class="btn btn-default">&nbsp;<span class="glyphicon glyphicon-search"></span>&nbsp;</button>
+	</span>
   </div>
-  <button type="submit" class="btn btn-default">Search</button>
 </form>
   </div><!-- /.container-fluid -->
 </nav>

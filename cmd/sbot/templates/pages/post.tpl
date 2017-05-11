@@ -26,7 +26,7 @@
 <input type="hidden" name="branch" value="{{.Message.Key}}">
 <input type="hidden" name="root" value="{{if eq .Content.Root.Type 0}}{{.Message.Key}}{{else}}{{.Content.Root}}{{end}}">
 <input type="hidden" name="returnto" value="/post?id={{.Message.Key | urlquery}}">
-<input type="submit" value="Publish!" class="btn btn-default">
+<input type="submit" value="Publish!" class="btn btn-primary">
 </form>
 </div>
 

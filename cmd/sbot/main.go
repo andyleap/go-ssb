@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"io/ioutil"
 	"log"
 	"net"
 
@@ -12,13 +15,41 @@ import (
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/social"
 
+	"github.com/cryptix/secretstream/secrethandshake"
+
 	r "net/rpc"
 )
 
 var datastore *ssb.DataStore
 
 func main() {
-	datastore, _ = ssb.OpenDataStore("feeds.db", "secret.json")
+	keypair, err := secrethandshake.LoadSSBKeyPair("secret.json")
+	if err != nil {
+		keypair, err = secrethandshake.GenEdKeyPair(rand.Reader)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		ref, _ := ssb.NewRef(ssb.RefFeed, keypair.Public[:], ssb.RefAlgoEd25519)
+		sbotKey := struct {
+			Curve   string `json:"curve"`
+			ID      string `json:"id"`
+			Private string `json:"private"`
+			Public  string `json:"public"`
+		}{
+			Curve:   "ed25519",
+			ID:      ref.String(),
+			Private: base64.StdEncoding.EncodeToString(keypair.Secret[:]) + ".ed25519",
+			Public:  base64.StdEncoding.EncodeToString(keypair.Public[:]) + ".ed25519",
+		}
+		buf, _ := ssb.Encode(sbotKey)
+		err := ioutil.WriteFile("secret.json", buf, 0600)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	datastore, _ = ssb.OpenDataStore("feeds.db", keypair)
 
 	gossip.Replicate(datastore)
 

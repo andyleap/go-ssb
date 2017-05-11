@@ -12,7 +12,7 @@
 <textarea name="text" class="form-control"></textarea><br>
 <input type="hidden" name="channel" value="{{.Channel}}">
 <input type="hidden" name="returnto" value="/channel?channel={{.Channel}}">
-<input type="submit" value="Publish!" class="btn btn-default">
+<input type="submit" value="Publish!" class="btn btn-primary">
 </form>
 </div>
 

@@ -137,7 +137,7 @@ func (p *Pointer) Unmarshal(buf []byte) {
 	copy(p.Author, buf[16:])
 }
 
-func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
+func OpenDataStore(path string, primaryKey *secrethandshake.EdKeyPair) (*DataStore, error) {
 	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func OpenDataStore(path string, primaryKey string) (*DataStore, error) {
 		extraData: map[string]interface{}{},
 		Keys:      map[Ref]Signer{},
 	}
-	ds.PrimaryKey, _ = secrethandshake.LoadSSBKeyPair(primaryKey)
+	ds.PrimaryKey = primaryKey
 	ds.PrimaryRef, _ = NewRef(RefFeed, ds.PrimaryKey.Public[:], RefAlgoEd25519)
 	ds.Keys[ds.PrimaryRef] = &SignerEd25519{ed25519.PrivateKey(ds.PrimaryKey.Secret[:])}
 
