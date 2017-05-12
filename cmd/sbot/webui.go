@@ -154,6 +154,11 @@ func init() {
 				return template.HTML("<!-- BLANK --!>")
 			}
 			buf := &bytes.Buffer{}
+			tpl := ContentTemplates.Lookup(t + ".tpl")
+			if tpl == nil {
+				return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+			}
+			
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 				Message *ssb.SignedMessage
 				Content interface{}
@@ -173,6 +178,10 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 		if t == "" {
 			return template.HTML("<!-- BLANK --!>")
 		}
+		tpl := ContentTemplates.Lookup(t + ".tpl")
+			if tpl == nil {
+				return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+			}
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 			Message *ssb.SignedMessage

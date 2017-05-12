@@ -431,7 +431,8 @@ func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*S
 				break
 			}
 			msg := ds.Get(tx, DBRef(val))
-			if _, ok := filter[msg.Author]; ok {
+
+			if _, ok := filter[msg.Author]; ok && msg.Type() != "" {
 				msgs = append(msgs, msg)
 			}
 			_, val = cur.Prev()
@@ -518,7 +519,9 @@ func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
 				break
 			}
 			msg := DecompressMessage(val)
-			msgs = append(msgs, msg)
+			if msg.Type() != "" {
+				msgs = append(msgs, msg)
+			}
 			_, val = cur.Prev()
 		}
 		return nil

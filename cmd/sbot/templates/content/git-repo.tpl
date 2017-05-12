@@ -1,0 +1,1 @@
+{{$about := GetAbout .Message.Key}}{{if $about}}{{.About.Name}}{{else}}{{.Message.Key}}{{end}}

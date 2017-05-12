@@ -22,3 +22,9 @@ func (m *Message) DecodeMessage() (t string, mb interface{}) {
 	json.Unmarshal(m.Content, &mb)
 	return
 }
+
+func (m *Message) Type() string {
+	Type := &MessageBody{}
+	json.Unmarshal(m.Content, &Type)
+	return Type.Type
+}

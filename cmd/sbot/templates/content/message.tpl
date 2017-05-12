@@ -7,8 +7,8 @@
 {{end}}
 {{end}}
 <div class="container-fluid"><div class="row">
-<div class="col-sm-7">{{Avatar .Message.Author}}</div>
-<div class="col-sm-5">
+<div class="col-sm-9">{{Avatar .Message.Author}}</div>
+<div class="col-sm-3">
 <a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}</a><br>
 <div class="row">
 <div class="col-xs-8">

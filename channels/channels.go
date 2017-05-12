@@ -16,7 +16,14 @@ func itob(v int) []byte {
 	return b
 }
 
+type Channel struct {
+	ssb.MessageBody
+	Channel    string `json:"channel"`
+	Subscribed bool   `json:"subscribed"`
+}
+
 func init() {
+	ssb.MessageTypes["channel"] = func(mb ssb.MessageBody) interface{} { return &Channel{MessageBody: mb} }
 	ssb.RebuildClearHooks["channels"] = func(tx *bolt.Tx) error {
 		tx.DeleteBucket([]byte("channels"))
 		return nil
