@@ -19,10 +19,10 @@
 <div class="well">
 <form action="/publish/post" method="post">
 <textarea name="text" class="form-control"></textarea><br>
-<input type="hidden" name="channel" value="{{urlquery .Channel}}">
-<input type="hidden" name="returnto" value="/feed?id={{urlquery .Root.Key.String}}">
-<input type="hidden" name="branch" value="{{urlquery .Reply.String}}">
-<input type="hidden" name="root" value="{{urlquery .Root.Key.String}}">
+<input type="hidden" name="channel" value="{{.Channel}}">
+<input type="hidden" name="returnto" value="/thread?id={{urlquery .Root.Key.String}}">
+<input type="hidden" name="branch" value="{{.Reply.String}}">
+<input type="hidden" name="root" value="{{.Root.Key.String}}">
 <input type="submit" value="Publish!" class="btn btn-primary">
 </form>
 </div>
