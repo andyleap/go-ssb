@@ -222,6 +222,7 @@ func RegisterWebui() {
 	http.HandleFunc("/search", Search)
 	http.HandleFunc("/publish/post", PublishPost)
 	http.HandleFunc("/publish/about", PublishAbout)
+	http.HandleFunc("/publish/follow", PublishFollow)
 	http.HandleFunc("/gossip/add", GossipAdd)
 	http.HandleFunc("/gossip/accept", GossipAccept)
 
@@ -282,6 +283,21 @@ func PublishAbout(rw http.ResponseWriter, req *http.Request) {
 	}
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, "/profile", http.StatusSeeOther)
+}
+
+func PublishFollow(rw http.ResponseWriter, req *http.Request) {
+	feed := ssb.ParseRef(req.FormValue("feed"))
+	if feed.Type == ssb.RefInvalid {
+		http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
+	}
+	p := &graph.Contact{}
+	p.Type = "contact"
+	p.Contact = feed
+	following := true
+	p.Following = &following
+	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
 
 func GossipAdd(rw http.ResponseWriter, req *http.Request) {
@@ -455,6 +471,12 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	}
 	feed := ssb.ParseRef(feedRaw)
 	dist, _ := strconv.ParseInt(distStr, 10, 64)
+
+	var about *social.About
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		about = social.GetAbout(tx, feed)
+		return nil
+	})
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
 		f := datastore.GetFeed(feed)
@@ -464,8 +486,12 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	}
 	err := PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
+		Profile  *social.About
+		Ref      ssb.Ref
 	}{
 		messages,
+		about,
+		feed,
 	})
 	if err != nil {
 		log.Println(err)
@@ -593,6 +619,18 @@ func Search(rw http.ResponseWriter, req *http.Request) {
 	}
 	if query[0] == '#' {
 		http.Redirect(rw, req, "/channel?channel="+query[1:], http.StatusFound)
+		return
+	}
+	r := ssb.ParseRef(query)
+	switch r.Type {
+	case ssb.RefBlob:
+		http.Redirect(rw, req, "/blob?id="+url.QueryEscape(r.String()), http.StatusFound)
+		return
+	case ssb.RefMessage:
+		http.Redirect(rw, req, "/post?id="+url.QueryEscape(r.String()), http.StatusFound)
+		return
+	case ssb.RefFeed:
+		http.Redirect(rw, req, "/feed?id="+url.QueryEscape(r.String()), http.StatusFound)
 		return
 	}
 
