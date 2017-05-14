@@ -275,7 +275,9 @@ func GetMsg(tx *bolt.Tx, post Ref) (m *SignedMessage) {
 var AddMessageHooks = map[string]func(m *SignedMessage, tx *bolt.Tx) error{}
 
 func (f *Feed) AddMessage(m *SignedMessage) error {
-	f.addChan <- m
+	if m != nil {
+		f.addChan <- m
+	}
 	return nil
 }
 

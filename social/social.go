@@ -1,11 +1,19 @@
 package social
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"time"
 
 	"github.com/andyleap/go-ssb"
 	"github.com/boltdb/bolt"
 )
+
+func itob(v int) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(v))
+	return b
+}
 
 type Link struct {
 	Link ssb.Ref `json:"link"`
@@ -133,18 +141,30 @@ func init() {
 				if err != nil {
 					return err
 				}
-				threadRaw := ThreadsBucket.Get(post.Root.DBKey())
-				var thread []ssb.Ref
-				if threadRaw != nil {
-					json.Unmarshal(threadRaw, &thread)
-				}
-				thread = append(thread, m.Key())
-				buf, _ := json.Marshal(thread)
-
-				err = ThreadsBucket.Put(post.Root.DBKey(), buf)
+				ThreadBucket, err := ThreadsBucket.CreateBucketIfNotExists(post.Root.DBKey())
 				if err != nil {
 					return err
 				}
+				logBucket, err := ThreadBucket.CreateBucketIfNotExists([]byte("log"))
+				if err != nil {
+					return err
+				}
+				logBucket.FillPercent = 1
+				seq, err := logBucket.NextSequence()
+				if err != nil {
+					return err
+				}
+				logBucket.Put(itob(int(seq)), m.Key().DBKey())
+
+				timeBucket, err := ThreadBucket.CreateBucketIfNotExists([]byte("time"))
+				if err != nil {
+					return err
+				}
+				i := int(m.Timestamp * float64(time.Millisecond))
+				for timeBucket.Get(itob(i)) != nil {
+					i++
+				}
+				timeBucket.Put(itob(i), m.Key().DBKey())
 			}
 		}
 		return nil
@@ -194,18 +214,21 @@ func GetThread(tx *bolt.Tx, ref ssb.Ref) []*ssb.SignedMessage {
 	if ThreadsBucket == nil {
 		return nil
 	}
-	threadsRaw := ThreadsBucket.Get(ref.DBKey())
-	var threadRefs []ssb.Ref
-	if threadsRaw != nil {
-		json.Unmarshal(threadsRaw, &threadRefs)
+	ThreadBucket := ThreadsBucket.Bucket(ref.DBKey())
+	if ThreadBucket == nil {
+		return nil
 	}
-	thread := make([]*ssb.SignedMessage, 0, len(threadRefs))
-	for _, r := range threadRefs {
-		msg := ssb.GetMsg(tx, r)
-		if msg == nil {
-			continue
+	timeBucket := ThreadBucket.Bucket([]byte("time"))
+	if timeBucket == nil {
+		return nil
+	}
+	thread := []*ssb.SignedMessage{}
+	timeBucket.ForEach(func(k, v []byte) error {
+		msg := ssb.GetMsg(tx, ssb.DBRef(v))
+		if msg != nil {
+			thread = append(thread, msg)
 		}
-		thread = append(thread, msg)
-	}
+		return nil
+	})
 	return thread
 }
