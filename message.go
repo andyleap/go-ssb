@@ -89,6 +89,7 @@ func (m *SignedMessage) Compress() []byte {
 	cwrite, _ := flate.NewWriterDict(&cbuf, 9, Compression2)
 	cwrite.Write(buf)
 	cwrite.Flush()
+	cwrite.Close()
 	return cbuf.Bytes()
 }
 
