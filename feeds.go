@@ -295,10 +295,10 @@ func (f *Feed) processMessageQueue() {
 				}
 
 				if m.Author != f.ID {
-					return fmt.Errorf("Wrong feed")
+					continue
 				}
 				if f.store.Get(nil, m.Key()) != nil {
-					return nil
+					continue
 				}
 				err := m.Verify(f)
 				if err != nil {
@@ -548,27 +548,28 @@ func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
 	return
 }
 
-func (f *Feed) GetSeq(seq int) (m *SignedMessage) {
-	f.store.db.View(func(tx *bolt.Tx) error {
-		FeedsBucket := tx.Bucket([]byte("feeds"))
-		if FeedsBucket == nil {
-			return nil
-		}
-		FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
-		if FeedBucket == nil {
-			return nil
-		}
-		FeedLogBucket := FeedBucket.Bucket([]byte("log"))
-		if FeedLogBucket == nil {
-			return nil
-		}
-		val := FeedLogBucket.Get(itob(seq))
-		if val == nil {
-			return nil
-		}
-		m = DecompressMessage(val)
+func (f *Feed) GetSeq(tx *bolt.Tx, seq int) (m *SignedMessage) {
+	if tx == nil {
+		tx, _ = f.store.db.Begin(false)
+		defer tx.Rollback()
+	}
+	FeedsBucket := tx.Bucket([]byte("feeds"))
+	if FeedsBucket == nil {
 		return nil
-	})
+	}
+	FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
+	if FeedBucket == nil {
+		return nil
+	}
+	FeedLogBucket := FeedBucket.Bucket([]byte("log"))
+	if FeedLogBucket == nil {
+		return nil
+	}
+	val := FeedLogBucket.Get(itob(seq))
+	if val == nil {
+		return nil
+	}
+	m = DecompressMessage(val)
 	return m
 }
 
