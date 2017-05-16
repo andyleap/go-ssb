@@ -182,7 +182,11 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 	go func() {
 		for m := range feed.addChan {
 			feed.waitingLock.Lock()
-			feed.waiting[m.Sequence] = m
+			feed.SeqLock.Lock()
+			if m.Sequence > feed.LatestSeq {
+				feed.waiting[m.Sequence] = m
+			}
+			feed.SeqLock.Unlock()
 			feed.waitingLock.Unlock()
 			feed.waitingSignal.Broadcast()
 		}
@@ -284,12 +288,15 @@ func (f *Feed) processMessageQueue() {
 		f.waitingSignal.L.Unlock()
 
 		f.store.db.Update(func(tx *bolt.Tx) error {
-			for {
-				f.waitingLock.Lock()
-				f.SeqLock.Lock()
-				m, ok := f.waiting[f.LatestSeq+1]
+			f.waitingLock.Lock()
+			f.SeqLock.Lock()
+			defer func() {
 				f.SeqLock.Unlock()
 				f.waitingLock.Unlock()
+			}()
+			for {
+				m, ok := f.waiting[f.LatestSeq+1]
+				delete(f.waiting, f.LatestSeq+1)
 				if !ok {
 					break
 				}
