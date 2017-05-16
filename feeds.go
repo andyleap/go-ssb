@@ -300,7 +300,7 @@ func (f *Feed) processMessageQueue() {
 				if f.store.Get(nil, m.Key()) != nil {
 					continue
 				}
-				err := m.Verify(f)
+				err := m.Verify(tx, f)
 				if err != nil {
 					//fmt.Println(err)
 					fmt.Print("-")

@@ -38,48 +38,7 @@ func Encode(i interface{}) ([]byte, error) {
 	return bytes.Trim(buf.Bytes(), "\n"), nil
 }
 
-func (m *SignedMessage) Verify(f *Feed) error {
-	buf, err := Encode(m.Message)
-	if err != nil {
-		return err
-	}
-	err = m.Signature.Verify(buf, m.Author)
-	if err != nil {
-		return err
-	}
-	latest := f.Latest()
-	if latest == nil && m.Sequence == 1 {
-		return nil
-	}
-	if latest == nil && m.Previous != nil {
-		fmt.Println(string(m.Encode()))
-		return fmt.Errorf("Expected message")
-	}
-	if m.Previous == nil && latest == nil {
-		return nil
-	}
-	if m.Previous == nil && latest != nil {
-		fmt.Println(string(m.Encode()))
-		return fmt.Errorf("Error: expected previous %s but found %s", latest.Key(), "")
-	}
-	if latest != nil && m.Sequence == latest.Sequence {
-		return fmt.Errorf("Error: Repeated message")
-	}
-	if *m.Previous != latest.Key() {
-		/*buf, _ := Encode(latest)
-		buf2 := ToJSBinary(buf)
-
-		buf3, _ := Encode(m)
-		fmt.Printf("\n%q\n%q\n%q\n", string(buf), string(buf2), string(buf3))*/
-		return fmt.Errorf("Error: expected previous %s but found %s", latest.Key(), *m.Previous)
-	}
-	if m.Sequence != latest.Sequence+1 || m.Timestamp <= latest.Timestamp {
-		return fmt.Errorf("Error: out of order")
-	}
-	return nil
-}
-
-func (m *SignedMessage) verify(tx *bolt.Tx, f *Feed) error {
+func (m *SignedMessage) Verify(tx *bolt.Tx, f *Feed) error {
 	buf, err := Encode(m.Message)
 	if err != nil {
 		return err
