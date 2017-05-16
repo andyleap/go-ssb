@@ -319,9 +319,7 @@ func (f *Feed) processMessageQueue() {
 					return err
 				}
 
-				f.SeqLock.Lock()
 				f.LatestSeq = m.Sequence
-				f.SeqLock.Unlock()
 				fmt.Print("*")
 				f.Topic.Send <- m
 			}
