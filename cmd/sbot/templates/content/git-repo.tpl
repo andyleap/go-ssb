@@ -1,1 +1,1 @@
-{{$about := GetAbout .Message.Key}}{{if $about}}{{.About.Name}}{{else}}{{.Message.Key}}{{end}}
+<a href="/repo?id={{.Message.Key}}">{{$about := GetAbout .Message.Key}}{{if $about}}{{.About.Name}}{{else}}{{.Message.Key}}{{end}}</a>
