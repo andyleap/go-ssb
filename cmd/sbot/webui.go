@@ -58,7 +58,7 @@ func GetURL(link, name string) (string, string) {
 			a = social.GetAbout(tx, r)
 			return nil
 		})
-		if a.Name != "" {
+		if a != nil && a.Name != "" {
 			name = "@" + a.Name
 		}
 		return "/feed?id=" + url.QueryEscape(r.String()), name
