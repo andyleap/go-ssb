@@ -1,7 +1,7 @@
 {{if ge .Levels 0}}
 {{if .Content.Branch.IsMessage}}
 <a href="/thread?id={{.Content.Root}}">View full thread</a><br>
-<div class="well" style="background: #404040;">
+<div class="well">
 {{$prior := GetMessage .Content.Branch}}{{RenderContent $prior .Levels}}
 </div>
 {{end}}
@@ -20,4 +20,6 @@
 </div>
 </div>
 </div></div>
+<div>
 {{Markdown .Content.Text}}
+</div>

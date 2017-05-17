@@ -3,6 +3,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/static/css/bootstrap.min.css" media="screen">
 <style>
+.well .well {
+	background: #404040;
+}
 .well img {
     max-width: 100%;
 }
