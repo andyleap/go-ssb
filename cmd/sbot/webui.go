@@ -709,6 +709,7 @@ func Blob(rw http.ResponseWriter, req *http.Request) {
 	}
 	rc := bs.Get(r)
 	defer rc.Close()
+	rw.Header().Set("Cache-Control", "max-age=31556926")
 	io.Copy(rw, rc)
 }
 
