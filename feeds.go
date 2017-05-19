@@ -286,8 +286,8 @@ func (f *Feed) processMessageQueue() {
 		f.waitingSignal.L.Lock()
 		f.waitingSignal.Wait()
 		f.waitingSignal.L.Unlock()
-
-		f.store.db.Update(func(tx *bolt.Tx) error {
+		newMsgs := []*SignedMessage{}
+		err := f.store.db.Update(func(tx *bolt.Tx) error {
 			f.waitingLock.Lock()
 			f.SeqLock.Lock()
 			defer func() {
@@ -321,10 +321,16 @@ func (f *Feed) processMessageQueue() {
 
 				f.LatestSeq = m.Sequence
 				fmt.Print("*")
-				f.Topic.Send <- m
+				newMsgs = append(newMsgs, m)
 			}
 			return nil
 		})
+		if err != nil {
+			continue
+		}
+		for _, m := range newMsgs {
+			f.Topic.Send <- m
+		}
 	}
 }
 
@@ -491,10 +497,17 @@ func (f *Feed) PublishMessage(body interface{}) error {
 		return fmt.Errorf("Cannot sign message without signing key for feed")
 	}
 	sm := m.Sign(signer)
-
+	c := f.Topic.Register(nil, true)
 	err := f.AddMessage(sm)
 	if err != nil {
 		return err
+	}
+
+	for newm := range c {
+		if newm.Key() == sm.Key() {
+			f.Topic.Unregister(c)
+			return nil
+		}
 	}
 
 	return nil

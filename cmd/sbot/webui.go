@@ -334,7 +334,6 @@ func PublishFollow(rw http.ResponseWriter, req *http.Request) {
 	following := true
 	p.Following = &following
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
-	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
 
