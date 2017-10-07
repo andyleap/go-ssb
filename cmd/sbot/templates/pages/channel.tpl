@@ -8,6 +8,9 @@
 {{template "navbar.tpl"}}
 
 <div class="well">
+<p class="channel">
+<a class="channel" href="/channel?channel={{.Channel}}">#{{.Channel}}</a>
+</p>
 <form action="/publish/post" method="post">
 <textarea name="text" class="form-control"></textarea><br>
 <input type="hidden" name="channel" value="{{.Channel}}">

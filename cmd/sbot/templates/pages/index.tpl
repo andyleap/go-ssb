@@ -3,23 +3,33 @@
 {{template "header.tpl"}}
 </head>
 <body>
-<div class="container">
 
 {{template "navbar.tpl"}}
 
-<div class="well">
-<form action="/publish/post" method="post">
-<textarea name="text" class="form-control"></textarea><br>
+
+<form class="postingarea" action="/publish/post" method="post">
+<textarea name="text"></textarea><br>
 <input type="hidden" name="returnto" value="/">
-<input type="submit" value="Publish!" class="btn btn-primary">
+<input type="submit" value="Publish!!" class="btn btn-primary">
 </form>
-</div>
+
+<br>
 
 {{range .Messages}}
-<div class="well">
 {{RenderContent . 1}}
-</div>
 {{end}}
+
+<div class="pagnum">
+<div class="page-nav">
+{{if not (eq .PageStr "1")}}<form .class="nav" action="/?page={{.PrevPage}}" method="post">
+<button>less</button>
+</form>
+{{else}}
+{{end}}
+<form .class="nav" action="/?page={{.NextPage}}" method="post">
+<button>more</button>
+</form>
 </div>
-</body>
-</html>
+</div>
+
+</body></html>

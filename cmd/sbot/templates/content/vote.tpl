@@ -3,4 +3,5 @@
 {{if gt .Content.Vote.Value 0}}liked
 {{else if lt .Content.Vote.Value 0}}disliked
 {{else}}noted{{end}}{{end}}
- <a href="/post?id={{.Content.Vote.Link}}">{{.Content.Vote.Link}}</a>
+ <a href="/post?id={{.Content.Vote.Link}}">a post</a>
+<br>

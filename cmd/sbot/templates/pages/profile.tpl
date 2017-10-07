@@ -16,7 +16,7 @@
 {{end}}
 </div>
 
-<div class="well">
+<div>
 <form action="/publish/about" method="post" enctype="multipart/form-data" class="form-inline">
 <input type="text" name="name" class="form-control" placeholder="name">
 <input type="file" name="upload" class="form-control" placeholder="picture">
