@@ -258,6 +258,7 @@ func RegisterWebui() {
 	http.HandleFunc("/publish/post", PublishPost)
 	http.HandleFunc("/publish/about", PublishAbout)
 	http.HandleFunc("/publish/follow", PublishFollow)
+	http.HandleFunc("/publish/vote", PublishVote)
 	http.HandleFunc("/gossip/add", GossipAdd)
 	http.HandleFunc("/gossip/accept", GossipAccept)
 
@@ -302,6 +303,16 @@ func PublishPost(rw http.ResponseWriter, req *http.Request) {
 	p.Branch = ssb.ParseRef(req.FormValue("branch"))
 	p.Channel = req.FormValue("channel")
 	p.Text = req.FormValue("text")
+	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
+}
+
+func PublishVote (rw http.ResponseWriter, req *http.Request) {
+	p := &social.Vote{}
+	p.Type = "vote"
+	p.Vote.Link = ssb.ParseRef(req.FormValue("link"))
+	p.Vote.Value = 1
+	p.Vote.Reason = ""
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
@@ -478,22 +489,39 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
+	pageStr := req.FormValue("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
 	distStr := req.FormValue("dist")
 	if distStr == "" {
-		distStr = "1"
+		distStr = "2"
 	}
 	dist, _ := strconv.ParseInt(distStr, 10, 64)
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
 		f := datastore.GetFeed(datastore.PrimaryRef)
-		messages = f.LatestCount(25)
+		messages = f.LatestCount(int(p))
 	} else {
-		messages = datastore.LatestCountFiltered(25, graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
+		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
 	}
-	err := PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
+	err = PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
@@ -509,6 +537,18 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	feed := ssb.ParseRef(feedRaw)
 	dist, _ := strconv.ParseInt(distStr, 10, 64)
 
+	pageStr := req.FormValue("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
+
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
 		about = social.GetAbout(tx, feed)
@@ -516,19 +556,28 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	})
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
-		f := datastore.GetFeed(feed)
-		messages = f.LatestCount(25)
+//		f := datastore.GetFeed(feed)
+//		messages = f.LatestCount(25)
+		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, feed, int(dist)))
 	} else {
-		messages = datastore.LatestCountFiltered(25, graph.GetFollows(datastore, feed, int(dist)))
+//		messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+//this is all fucked up
+		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, feed, int(dist)))
 	}
-	err := PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
+	err = PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Profile  *social.About
 		Ref      ssb.Ref
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
 		about,
 		feed,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
@@ -554,6 +603,14 @@ func ThreadPage(rw http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 
+	feedRaw := datastore.PrimaryRef.String()
+	feed := ssb.ParseRef(feedRaw)
+
+	var about *social.About
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		about = social.GetAbout(tx, feed)
+		return nil
+	})
 	reply := root.Key()
 	if len(messages) > 0 {
 		reply = messages[len(messages)-1].Key()
@@ -564,11 +621,13 @@ func ThreadPage(rw http.ResponseWriter, req *http.Request) {
 		Channel  string
 		Reply    ssb.Ref
 		Messages []*ssb.SignedMessage
+		Profile  *social.About
 	}{
 		root,
 		channel,
 		reply,
 		messages,
+		about,
 	})
 	if err != nil {
 		log.Println(err)
@@ -587,6 +646,7 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	_, content := message.DecodeMessage()
+    raw := message.Encode()
 	p, ok := content.(*social.Post)
 	if !ok {
 		PageTemplates.ExecuteTemplate(rw, "message.tpl", struct {
@@ -605,10 +665,12 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		Message *ssb.SignedMessage
 		Content *social.Post
 		Votes   []*ssb.SignedMessage
+		Raw     []byte
 	}{
 		message,
 		p,
 		votes,
+        raw,
 	})
 	if err != nil {
 		log.Println(err)
@@ -616,17 +678,34 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Profile(rw http.ResponseWriter, req *http.Request) {
+	feedRaw := datastore.PrimaryRef.String()
+	distStr := req.FormValue("dist")
+	if distStr == "" {
+		distStr = "0"
+	}
+	feed := ssb.ParseRef(feedRaw)
+	dist, _ := strconv.ParseInt(distStr, 10, 64)
+
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
-		about = social.GetAbout(tx, datastore.PrimaryRef)
+		about = social.GetAbout(tx, feed)
 		return nil
 	})
+	var messages []*ssb.SignedMessage
+	if dist == 0 {
+		f := datastore.GetFeed(feed)
+		messages = f.LatestCount(25)
+	} else {
+		messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+	}
 	err := PageTemplates.ExecuteTemplate(rw, "profile.tpl", struct {
-		Profile *social.About
-		Ref     ssb.Ref
+		Messages []*ssb.SignedMessage
+		Profile  *social.About
+		Ref      ssb.Ref
 	}{
+		messages,
 		about,
-		datastore.PrimaryRef,
+		feed,
 	})
 	if err != nil {
 		log.Println(err)

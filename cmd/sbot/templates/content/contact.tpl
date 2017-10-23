@@ -1,5 +1,4 @@
-<div class="container-fluid"><div class="row">
-<div class="col-sm-7">{{Avatar .Message.Author}}{{if .Content.Following}} followed {{else}} unfollowed {{end}}
+{{Avatar .Message.Author}}{{if .Content.Following}} followed {{else}} unfollowed {{end}}
 {{$contact := GetAbout .Content.Contact}}
 <a href="/feed?id={{urlquery .Content.Contact}}">
 {{if $contact}}
@@ -7,15 +6,6 @@
 {{else}}
 {{.Content.Contact}}
 {{end}}
-</a></div>
-<div class="col-sm-5">
-<div class="row">
-<div class="col-xs-8">
+</a>
 <a href="/post?id={{.Message.Key}}">{{RenderJSTime .Message.Timestamp}}</a>
-</div>
-<div class="col-xs-4" style="text-align: right;">
 {{$votes := GetVotes .Message.Key}}{{len $votes}} Votes
-</div>
-</div>
-</div>
-</div></div>

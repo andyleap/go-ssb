@@ -448,7 +448,7 @@ func (ds *DataStore) Rebuild(module string) {
 	log.Println("Reindexed", count, "messages")
 }
 
-func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*SignedMessage) {
+func (ds *DataStore) LatestCountFiltered(num int, start int, filter map[Ref]int) (msgs []*SignedMessage) {
 	ds.db.View(func(tx *bolt.Tx) error {
 		LogBucket := tx.Bucket([]byte("log"))
 		if LogBucket == nil {
@@ -457,6 +457,12 @@ func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*S
 		cur := LogBucket.Cursor()
 		_, val := cur.Last()
 		for len(msgs) < num {
+            for i := 0; i < start; i++ {
+                _, val = cur.Prev()
+                if val == nil {
+                    break
+                }
+            }
 			if val == nil {
 				break
 			}
