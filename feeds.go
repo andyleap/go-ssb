@@ -103,6 +103,13 @@ func (ds *DataStore) DB() *bolt.DB {
 	return ds.db
 }
 
+func (ds *DataStore) Close() {
+	err := ds.db.Close()
+	if err != nil {
+		log.Println("error closing db:", err)
+	}
+}
+
 type Feed struct {
 	store *DataStore
 	ID    Ref
@@ -457,12 +464,12 @@ func (ds *DataStore) LatestCountFiltered(num int, start int, filter map[Ref]int)
 		cur := LogBucket.Cursor()
 		_, val := cur.Last()
 		for len(msgs) < num {
-            for i := 0; i < start; i++ {
-                _, val = cur.Prev()
-                if val == nil {
-                    break
-                }
-            }
+			for i := 0; i < start; i++ {
+				_, val = cur.Prev()
+				if val == nil {
+					break
+				}
+			}
 			if val == nil {
 				break
 			}
