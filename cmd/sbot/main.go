@@ -78,7 +78,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	l, err := net.Listen("tcp", ":9822")
+	l, _ := net.Listen("tcp", "localhost:9822")
 	if err != nil {
 		log.Fatal(err)
 	}

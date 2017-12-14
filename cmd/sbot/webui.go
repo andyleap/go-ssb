@@ -280,7 +280,7 @@ func RegisterWebui() {
 
 	http.HandleFunc("/upload", Upload)
 
-	go http.ListenAndServe(":9823", nil)
+	go http.ListenAndServe("localhost:9823", nil)
 }
 
 func Upload(rw http.ResponseWriter, req *http.Request) {
