@@ -508,7 +508,7 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
 		f := datastore.GetFeed(datastore.PrimaryRef)
-		messages = f.LatestCount(int(p))
+		messages = f.LatestCount(int(p), 0)
 	} else {
 		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
 	}
@@ -530,12 +530,7 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 
 func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	feedRaw := req.FormValue("id")
-	distStr := req.FormValue("dist")
-	if distStr == "" {
-		distStr = "0"
-	}
 	feed := ssb.ParseRef(feedRaw)
-	dist, _ := strconv.ParseInt(distStr, 10, 64)
 
 	pageStr := req.FormValue("page")
 	if pageStr == "" {
@@ -555,15 +550,9 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	var messages []*ssb.SignedMessage
-	if dist == 0 {
-//		f := datastore.GetFeed(feed)
-//		messages = f.LatestCount(25)
-		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, feed, int(dist)))
-	} else {
-//		messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
-//this is all fucked up
-		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, feed, int(dist)))
-	}
+    f := datastore.GetFeed(feed)
+    messages = f.LatestCount(25, p)
+//	messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
 	err = PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Profile  *social.About
@@ -694,7 +683,7 @@ func Profile(rw http.ResponseWriter, req *http.Request) {
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
 		f := datastore.GetFeed(feed)
-		messages = f.LatestCount(25)
+		messages = f.LatestCount(25, 0)
 	} else {
 		messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
 	}

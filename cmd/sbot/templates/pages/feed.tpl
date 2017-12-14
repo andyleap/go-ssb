@@ -6,8 +6,6 @@
 <div class="container">
 {{template "navbar.tpl"}}
 
-hi {{.PageStr}}
-
 <div class="row">
 <div class="col-sm-6 col-sm-offset-2">
 {{if .Profile}}
@@ -40,6 +38,19 @@ hi {{.PageStr}}
 	{{RenderContent . 1}}
 </div>
 {{end}}
+</div>
+
+<div class="pagnum">
+<div class="page-nav">
+{{if not (eq .PageStr "1")}}<form .class="nav" action="/feed?id={{.Ref}}&page={{.PrevPage}}" method="post">
+<button>less</button>
+</form>
+{{else}}
+{{end}}
+<form .class="nav" action="/feed?id={{.Ref}}&page={{.NextPage}}" method="post">
+<button>more</button>
+</form>
+</div>
 </div>
 
 </div>
