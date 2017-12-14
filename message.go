@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+
+	"github.com/boltdb/bolt"
 )
 
 type SignedMessage struct {
@@ -36,7 +38,7 @@ func Encode(i interface{}) ([]byte, error) {
 	return bytes.Trim(buf.Bytes(), "\n"), nil
 }
 
-func (m *SignedMessage) Verify(f *Feed) error {
+func (m *SignedMessage) Verify(tx *bolt.Tx, f *Feed) error {
 	buf, err := Encode(m.Message)
 	if err != nil {
 		return err
@@ -45,10 +47,10 @@ func (m *SignedMessage) Verify(f *Feed) error {
 	if err != nil {
 		return err
 	}
-	latest := f.Latest()
-	if latest == nil && m.Sequence == 1 {
+	if m.Sequence == 1 {
 		return nil
 	}
+	latest := f.GetSeq(tx, m.Sequence-1)
 	if latest == nil && m.Previous != nil {
 		fmt.Println(string(m.Encode()))
 		return fmt.Errorf("Expected message")
@@ -89,6 +91,7 @@ func (m *SignedMessage) Compress() []byte {
 	cwrite, _ := flate.NewWriterDict(&cbuf, 9, Compression2)
 	cwrite.Write(buf)
 	cwrite.Flush()
+	cwrite.Close()
 	return cbuf.Bytes()
 }
 

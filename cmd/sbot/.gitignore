@@ -2,3 +2,5 @@
 /secret.json
 /feeds.db.lock
 blobs
+sbot
+!sbot/

@@ -5,7 +5,7 @@ func (f *Feed) Follow(seq int, live bool, handler func(m *SignedMessage) error, 
 		f.SeqLock.Lock()
 		if f.LatestSeq >= seq {
 			f.SeqLock.Unlock()
-			m := f.GetSeq(seq)
+			m := f.GetSeq(nil, seq)
 			if m != nil {
 				err := handler(m)
 				if err != nil {

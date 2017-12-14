@@ -9,20 +9,28 @@
 <div class="row">
 <div class="col-sm-6 col-sm-offset-2">
 {{if .Profile}}
-{{if .Profile.Image}}<img src="/blob?id={{urlquery .Profile.Image.Link}}" width="100" height="100"><br>{{end}}
-<b>{{.Profile.Name}}</b>
+{{if .Profile.Image}}<img class="avatarwell" src="/blob?id={{urlquery .Profile.Image.Link}}" width="100" height="100">{{end}}
+<div class="about"><b>@{{.Profile.Name}}</b><p class="ref">{{.Ref}}</p><form action="/publish/follow" method="post">
+<input type="hidden" name="feed" value="{{.Ref}}">
+<input type="hidden" name="returnto" value="/feed?id={{urlquery .Ref}}">
+<button class="postbutton" style="float:right;">Follow</button>
+</form>
+</div>
 {{else}}
 {{.Ref}}
 {{end}}
-</div>
-<div class="col-sm-2">
-<form action="/publish/follow" method="post">
-<input type="hidden" name="feed" value="{{.Ref}}">
-<input type="hidden" name="returnto" value="/feed?id={{urlquery .Ref}}">
-<button class="btn btn-default" style="float:right;">Follow</button>
-</form>
+<br>
 
+<div>
+<form action="/publish/about" method="post" enctype="multipart/form-data" class="form-inline">
+<input type="text" name="name" class="form-control" placeholder="name">
+<input type="file" name="upload" class="form-control" placeholder="picture">
+<input type="submit" value="Update" class="btn btn-primary">
+</form>
 </div>
+</div>
+
+<br>
 </div>
 
 {{range .Messages}}
@@ -30,6 +38,19 @@
 	{{RenderContent . 1}}
 </div>
 {{end}}
+</div>
+
+<div class="pagnum">
+<div class="page-nav">
+{{if not (eq .PageStr "1")}}<form .class="nav" action="/feed?id={{.Ref}}&page={{.PrevPage}}" method="post">
+<button>less</button>
+</form>
+{{else}}
+{{end}}
+<form .class="nav" action="/feed?id={{.Ref}}&page={{.NextPage}}" method="post">
+<button>more</button>
+</form>
+</div>
 </div>
 
 </div>

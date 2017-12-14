@@ -17,6 +17,26 @@ import (
 	"github.com/andyleap/muxrpc/codec"
 )
 
+type BlobLink struct {
+	blobLink
+}
+
+type blobLink struct {
+	Link ssb.Ref `json:"link"`
+	Size int     `json:"size,omitempty"`
+}
+
+func (bl *BlobLink) UnmarshalJSON(b []byte) error {
+	err := json.Unmarshal(b, &bl.blobLink)
+	if err != nil {
+		err = json.Unmarshal(b, &bl.Link)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func New(root string, ds *ssb.DataStore) *BlobStore {
 	return &BlobStore{
 		ds:   ds,
@@ -24,6 +44,10 @@ func New(root string, ds *ssb.DataStore) *BlobStore {
 		wait: sync.NewCond(&sync.Mutex{}),
 		want: map[ssb.Ref]*want{},
 	}
+}
+
+func Get(ds *ssb.DataStore) *BlobStore {
+	return ds.ExtraData("blobStore").(*BlobStore)
 }
 
 type want struct {

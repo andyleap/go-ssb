@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/microcosm-cc/bluemonday"
 	"github.com/russross/blackfriday"
 
 	"github.com/andyleap/boltinspect"
@@ -22,6 +23,7 @@ import (
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/blobs"
 	"github.com/andyleap/go-ssb/channels"
+	"github.com/andyleap/go-ssb/git"
 	"github.com/andyleap/go-ssb/gossip"
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/search"
@@ -34,35 +36,50 @@ type SSBRenderer struct {
 	blackfriday.Renderer
 }
 
-func (ssbr *SSBRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {
-	r := ssb.ParseRef(string(link))
+func GetURL(link, name string) (string, string) {
+
+	r := ssb.ParseRef(link)
 	switch r.Type {
 	case ssb.RefBlob:
-		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
+		return "/blob?id=" + url.QueryEscape(r.String()), name
 	case ssb.RefMessage:
-		link = []byte("/post?id=" + url.QueryEscape(r.String()))
+		msg := datastore.Get(nil, r)
+		if msg != nil {
+			_, repo := msg.DecodeMessage()
+			if _, ok := repo.(*git.RepoRoot); ok {
+				return "/repo?id=" + url.QueryEscape(r.String()), name
+			}
+		}
+		return "/post?id=" + url.QueryEscape(r.String()), name
+
 	case ssb.RefFeed:
-		link = []byte("/feed?id=" + url.QueryEscape(r.String()))
+		a := &social.About{}
+		datastore.DB().View(func(tx *bolt.Tx) error {
+			a = social.GetAbout(tx, r)
+			return nil
+		})
+		if a != nil && a.Name != "" {
+			name = "@" + a.Name
+		}
+		return "/feed?id=" + url.QueryEscape(r.String()), name
 	}
 	if link[0] == '#' {
-		link = []byte("/channel?channel=" + url.QueryEscape(string(link[1:])))
+		return "/channel?channel=" + url.QueryEscape(string(link[1:])), name
 	}
-	ssbr.Renderer.AutoLink(out, link, kind)
+	return link, name
+}
+
+func (ssbr *SSBRenderer) AutoLink(out *bytes.Buffer, link []byte, kind int) {
+	url, _ := GetURL(string(link), "")
+	ssbr.Renderer.AutoLink(out, []byte(url), kind)
 }
 func (ssbr *SSBRenderer) Link(out *bytes.Buffer, link []byte, title []byte, content []byte) {
-	r := ssb.ParseRef(string(link))
-	switch r.Type {
-	case ssb.RefBlob:
-		link = []byte("/blob?id=" + url.QueryEscape(r.String()))
-	case ssb.RefMessage:
-		link = []byte("/post?id=" + url.QueryEscape(r.String()))
-	case ssb.RefFeed:
-		link = []byte("/feed?id=" + url.QueryEscape(r.String()))
+	url, name := GetURL(string(link), string(content))
+	if name != string(content) {
+		title = content
 	}
-	if link[0] == '#' {
-		link = []byte("/channel?channel=" + url.QueryEscape(string(link[1:])))
-	}
-	ssbr.Renderer.Link(out, link, title, content)
+
+	ssbr.Renderer.Link(out, []byte(url), title, []byte(name))
 }
 
 func (ssbr *SSBRenderer) Image(out *bytes.Buffer, link []byte, title []byte, alt []byte) {
@@ -94,10 +111,13 @@ func RenderMarkdown(input []byte) []byte {
 		blackfriday.EXTENSION_DEFINITION_LISTS
 	// set up the HTML renderer
 	renderer := &SSBRenderer{blackfriday.HtmlRenderer(commonHtmlFlags, "", "")}
+
 	options := blackfriday.Options{
 		Extensions: commonExtensions}
 
-	return blackfriday.MarkdownOptions(input, renderer, options)
+	pol := bluemonday.UGCPolicy()
+
+	return pol.SanitizeBytes(blackfriday.MarkdownOptions(input, renderer, options))
 }
 
 func init() {
@@ -145,6 +165,9 @@ func init() {
 			})
 			return
 		},
+		"HasBlob": func(ref ssb.Ref) bool {
+			return blobs.Get(datastore).Has(ref)
+		},
 		"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 			if m == nil {
 				return ""
@@ -158,7 +181,7 @@ func init() {
 			if tpl == nil {
 				return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
 			}
-			
+
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 				Message *ssb.SignedMessage
 				Content interface{}
@@ -179,9 +202,9 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 			return template.HTML("<!-- BLANK --!>")
 		}
 		tpl := ContentTemplates.Lookup(t + ".tpl")
-			if tpl == nil {
-				return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
-			}
+		if tpl == nil {
+			return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+		}
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
 			Message *ssb.SignedMessage
@@ -192,6 +215,9 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 			log.Println(err)
 		}
 		return template.HTML("<!-- " + t + " --!>" + buf.String())
+	},
+	"HasBlob": func(ref ssb.Ref) bool {
+		return blobs.Get(datastore).Has(ref)
 	},
 	"RenderContentTemplate": func(m *ssb.SignedMessage, levels int, tpl string) template.HTML {
 		t, md := m.DecodeMessage()
@@ -232,6 +258,7 @@ func RegisterWebui() {
 	http.HandleFunc("/publish/post", PublishPost)
 	http.HandleFunc("/publish/about", PublishAbout)
 	http.HandleFunc("/publish/follow", PublishFollow)
+	http.HandleFunc("/publish/vote", PublishVote)
 	http.HandleFunc("/gossip/add", GossipAdd)
 	http.HandleFunc("/gossip/accept", GossipAccept)
 
@@ -245,6 +272,9 @@ func RegisterWebui() {
 
 	http.HandleFunc("/blob", Blob)
 	http.HandleFunc("/blobinfo", BlobInfo)
+
+	http.HandleFunc("/repo", RepoInfo)
+	http.HandleFunc("/repo/want", RepoWant)
 
 	http.HandleFunc("/raw", Raw)
 
@@ -277,6 +307,16 @@ func PublishPost(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
 
+func PublishVote (rw http.ResponseWriter, req *http.Request) {
+	p := &social.Vote{}
+	p.Type = "vote"
+	p.Vote.Link = ssb.ParseRef(req.FormValue("link"))
+	p.Vote.Value = 1
+	p.Vote.Reason = ""
+	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
+	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
+}
+
 func PublishAbout(rw http.ResponseWriter, req *http.Request) {
 	p := &social.About{}
 	p.Type = "about"
@@ -304,7 +344,6 @@ func PublishFollow(rw http.ResponseWriter, req *http.Request) {
 	p.Contact = feed
 	following := true
 	p.Following = &following
-	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
@@ -450,22 +489,39 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
+	pageStr := req.FormValue("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
 	distStr := req.FormValue("dist")
 	if distStr == "" {
-		distStr = "1"
+		distStr = "2"
 	}
 	dist, _ := strconv.ParseInt(distStr, 10, 64)
 	var messages []*ssb.SignedMessage
 	if dist == 0 {
 		f := datastore.GetFeed(datastore.PrimaryRef)
-		messages = f.LatestCount(100)
+		messages = f.LatestCount(int(p), 0)
 	} else {
-		messages = datastore.LatestCountFiltered(100, graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
+		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
 	}
-	err := PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
+	err = PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
@@ -474,12 +530,19 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 
 func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	feedRaw := req.FormValue("id")
-	distStr := req.FormValue("dist")
-	if distStr == "" {
-		distStr = "0"
-	}
 	feed := ssb.ParseRef(feedRaw)
-	dist, _ := strconv.ParseInt(distStr, 10, 64)
+
+	pageStr := req.FormValue("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
 
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
@@ -487,20 +550,23 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	var messages []*ssb.SignedMessage
-	if dist == 0 {
-		f := datastore.GetFeed(feed)
-		messages = f.LatestCount(100)
-	} else {
-		messages = datastore.LatestCountFiltered(100, graph.GetFollows(datastore, feed, int(dist)))
-	}
-	err := PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
+    f := datastore.GetFeed(feed)
+    messages = f.LatestCount(25, p)
+//	messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+	err = PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Profile  *social.About
 		Ref      ssb.Ref
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
 		about,
 		feed,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
@@ -526,6 +592,14 @@ func ThreadPage(rw http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 
+	feedRaw := datastore.PrimaryRef.String()
+	feed := ssb.ParseRef(feedRaw)
+
+	var about *social.About
+	datastore.DB().View(func(tx *bolt.Tx) error {
+		about = social.GetAbout(tx, feed)
+		return nil
+	})
 	reply := root.Key()
 	if len(messages) > 0 {
 		reply = messages[len(messages)-1].Key()
@@ -536,11 +610,13 @@ func ThreadPage(rw http.ResponseWriter, req *http.Request) {
 		Channel  string
 		Reply    ssb.Ref
 		Messages []*ssb.SignedMessage
+		Profile  *social.About
 	}{
 		root,
 		channel,
 		reply,
 		messages,
+		about,
 	})
 	if err != nil {
 		log.Println(err)
@@ -550,7 +626,7 @@ func ThreadPage(rw http.ResponseWriter, req *http.Request) {
 func Post(rw http.ResponseWriter, req *http.Request) {
 	post := req.FormValue("id")
 	if post == "" {
-		Index(rw, req)
+		http.NotFound(rw, req)
 		return
 	}
 	message := datastore.Get(nil, ssb.ParseRef(post))
@@ -559,9 +635,14 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	_, content := message.DecodeMessage()
+    raw := message.Encode()
 	p, ok := content.(*social.Post)
 	if !ok {
-		Index(rw, req)
+		PageTemplates.ExecuteTemplate(rw, "message.tpl", struct {
+			Message *ssb.SignedMessage
+		}{
+			message,
+		})
 		return
 	}
 	var votes []*ssb.SignedMessage
@@ -573,10 +654,12 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		Message *ssb.SignedMessage
 		Content *social.Post
 		Votes   []*ssb.SignedMessage
+		Raw     []byte
 	}{
 		message,
 		p,
 		votes,
+        raw,
 	})
 	if err != nil {
 		log.Println(err)
@@ -584,17 +667,34 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 }
 
 func Profile(rw http.ResponseWriter, req *http.Request) {
+	feedRaw := datastore.PrimaryRef.String()
+	distStr := req.FormValue("dist")
+	if distStr == "" {
+		distStr = "0"
+	}
+	feed := ssb.ParseRef(feedRaw)
+	dist, _ := strconv.ParseInt(distStr, 10, 64)
+
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
-		about = social.GetAbout(tx, datastore.PrimaryRef)
+		about = social.GetAbout(tx, feed)
 		return nil
 	})
+	var messages []*ssb.SignedMessage
+	if dist == 0 {
+		f := datastore.GetFeed(feed)
+		messages = f.LatestCount(25, 0)
+	} else {
+		messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+	}
 	err := PageTemplates.ExecuteTemplate(rw, "profile.tpl", struct {
-		Profile *social.About
-		Ref     ssb.Ref
+		Messages []*ssb.SignedMessage
+		Profile  *social.About
+		Ref      ssb.Ref
 	}{
+		messages,
 		about,
-		datastore.PrimaryRef,
+		feed,
 	})
 	if err != nil {
 		log.Println(err)
@@ -636,6 +736,14 @@ func Search(rw http.ResponseWriter, req *http.Request) {
 		http.Redirect(rw, req, "/blob?id="+url.QueryEscape(r.String()), http.StatusFound)
 		return
 	case ssb.RefMessage:
+		msg := datastore.Get(nil, r)
+		if msg != nil {
+			_, repo := msg.DecodeMessage()
+			if _, ok := repo.(*git.RepoRoot); ok {
+				http.Redirect(rw, req, "/repo?id="+url.QueryEscape(r.String()), http.StatusFound)
+				return
+			}
+		}
 		http.Redirect(rw, req, "/post?id="+url.QueryEscape(r.String()), http.StatusFound)
 		return
 	case ssb.RefFeed:
@@ -668,6 +776,7 @@ func Blob(rw http.ResponseWriter, req *http.Request) {
 	}
 	rc := bs.Get(r)
 	defer rc.Close()
+	rw.Header().Set("Cache-Control", "max-age=31556926")
 	io.Copy(rw, rc)
 }
 
@@ -697,4 +806,51 @@ func Raw(rw http.ResponseWriter, req *http.Request) {
 		buf := m.Encode()
 		rw.Write(buf)
 	}
+}
+
+func RepoInfo(rw http.ResponseWriter, req *http.Request) {
+	id := req.FormValue("id")
+	if id == "" {
+		http.NotFound(rw, req)
+		return
+	}
+	r := ssb.ParseRef(id)
+	repo := git.Get(datastore, r)
+	if repo == nil {
+		http.NotFound(rw, req)
+		return
+	}
+	bs := repo.ListBlobs()
+	updates := repo.ListUpdates()
+	issues := repo.Issues()
+	err := PageTemplates.ExecuteTemplate(rw, "repo.tpl", struct {
+		Blobs   []ssb.Ref
+		Updates []ssb.Ref
+		Issues  []*ssb.SignedMessage
+		Ref     ssb.Ref
+	}{
+		bs,
+		updates,
+		issues,
+		r,
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func RepoWant(rw http.ResponseWriter, req *http.Request) {
+	id := req.FormValue("id")
+	if id == "" {
+		http.NotFound(rw, req)
+		return
+	}
+	r := ssb.ParseRef(id)
+	repo := git.Get(datastore, r)
+	if repo == nil {
+		http.NotFound(rw, req)
+		return
+	}
+	repo.WantAll()
+	http.Redirect(rw, req, "/repo?id="+url.QueryEscape(r.String()), http.StatusFound)
 }

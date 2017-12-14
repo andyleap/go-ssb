@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+//    "os"
 
 	"github.com/andyleap/go-ssb"
 	_ "github.com/andyleap/go-ssb/channels"
@@ -23,6 +24,13 @@ import (
 var datastore *ssb.DataStore
 
 func main() {
+
+//    home := os.Getenv("HOME")
+//    err := os.Chdir(home+"/Library/Application Support/sbot")
+//    if err != nil {
+//        panic(err)
+//    }
+
 	keypair, err := secrethandshake.LoadSSBKeyPair("secret.json")
 	if err != nil {
 		keypair, err = secrethandshake.GenEdKeyPair(rand.Reader)
@@ -49,7 +57,11 @@ func main() {
 		}
 	}
 
-	datastore, _ = ssb.OpenDataStore("feeds.db", keypair)
+	datastore, err = ssb.OpenDataStore("feeds.db", keypair)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer datastore.Close()
 
 	gossip.Replicate(datastore)
 
@@ -57,10 +69,19 @@ func main() {
 
 	//datastore.Rebuild("channels")
 
-	r.Register(&Gossip{datastore})
-	r.Register(&Feed{datastore})
+	err = r.Register(&Gossip{datastore})
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = r.Register(&Feed{datastore})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	l, _ := net.Listen("tcp", "localhost:9822")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	r.Accept(l)
 

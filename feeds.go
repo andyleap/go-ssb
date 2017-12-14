@@ -103,6 +103,13 @@ func (ds *DataStore) DB() *bolt.DB {
 	return ds.db
 }
 
+func (ds *DataStore) Close() {
+	err := ds.db.Close()
+	if err != nil {
+		log.Println("error closing db:", err)
+	}
+}
+
 type Feed struct {
 	store *DataStore
 	ID    Ref
@@ -113,7 +120,9 @@ type Feed struct {
 
 	addChan chan *SignedMessage
 
-	waiting map[int]*SignedMessage
+	waiting       map[int]*SignedMessage
+	waitingLock   sync.Mutex
+	waitingSignal *sync.Cond
 }
 
 type Pointer struct {
@@ -169,29 +178,27 @@ func (ds *DataStore) GetFeed(feedID Ref) *Feed {
 	if feedID.Type != RefFeed {
 		return nil
 	}
-	feed := &Feed{store: ds, ID: feedID, Topic: NewMessageTopic(), addChan: make(chan *SignedMessage, 10), waiting: map[int]*SignedMessage{}}
+	feed := &Feed{
+		store:         ds,
+		ID:            feedID,
+		Topic:         NewMessageTopic(),
+		addChan:       make(chan *SignedMessage, 10),
+		waiting:       map[int]*SignedMessage{},
+		waitingSignal: sync.NewCond(&sync.Mutex{}),
+	}
 	go func() {
 		for m := range feed.addChan {
+			feed.waitingLock.Lock()
 			feed.SeqLock.Lock()
-			curSeq := feed.LatestSeq
+			if m.Sequence > feed.LatestSeq {
+				feed.waiting[m.Sequence] = m
+			}
 			feed.SeqLock.Unlock()
-			if curSeq >= m.Sequence {
-				continue
-			}
-			feed.waiting[m.Sequence] = m
-
-			for {
-				feed.SeqLock.Lock()
-				next, ok := feed.waiting[feed.LatestSeq+1]
-				feed.SeqLock.Unlock()
-				if !ok {
-					break
-				}
-				delete(feed.waiting, feed.LatestSeq+1)
-				feed.addMessage(next)
-			}
+			feed.waitingLock.Unlock()
+			feed.waitingSignal.Broadcast()
 		}
 	}()
+	go feed.processMessageQueue()
 	m := feed.Latest()
 	if m != nil {
 		feed.LatestSeq = m.Sequence
@@ -281,79 +288,107 @@ func (f *Feed) AddMessage(m *SignedMessage) error {
 	return nil
 }
 
-func (f *Feed) addMessage(m *SignedMessage) error {
-	if m.Author != f.ID {
-		return fmt.Errorf("Wrong feed")
-	}
-	if f.store.Get(nil, m.Key()) != nil {
-		return nil
-	}
-	err := m.Verify(f)
-	if err != nil {
-		//fmt.Println(err)
-		fmt.Print("-")
-		return err
-	}
-	err = f.store.db.Update(func(tx *bolt.Tx) error {
-		FeedsBucket, err := tx.CreateBucketIfNotExists([]byte("feeds"))
-		if err != nil {
-			return err
-		}
-		FeedBucket, err := FeedsBucket.CreateBucketIfNotExists(f.ID.DBKey())
-		if err != nil {
-			return err
-		}
-		FeedLogBucket, err := FeedBucket.CreateBucketIfNotExists([]byte("log"))
-		if err != nil {
-			return err
-		}
-		FeedLogBucket.FillPercent = 1
-		buf := m.Compress()
-		err = FeedLogBucket.Put(itob(m.Sequence), buf)
-		if err != nil {
-			return err
-		}
-		LogBucket, err := tx.CreateBucketIfNotExists([]byte("log"))
-		if err != nil {
-			return err
-		}
-		LogBucket.FillPercent = 1
-		seq, err := LogBucket.NextSequence()
-		if err != nil {
-			return err
-		}
-		err = LogBucket.Put(itob(int(seq)), m.Key().DBKey())
-		if err != nil {
-			return err
-		}
-		PointerBucket, err := tx.CreateBucketIfNotExists([]byte("pointer"))
-		if err != nil {
-			return err
-		}
-		pointer := Pointer{Sequence: m.Sequence, LogKey: int(seq), Author: m.Author.DBKey()}
-		buf = pointer.Marshal()
-		err = PointerBucket.Put(m.Key().DBKey(), buf)
-		if err != nil {
-			return err
-		}
-		for module, hook := range AddMessageHooks {
-			err = hook(m, tx)
-			if err != nil {
-				return fmt.Errorf("Bolt %s hook: %s", module, err)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		fmt.Println("Bolt: ", err)
-		return err
-	}
-	f.SeqLock.Lock()
-	f.LatestSeq = m.Sequence
+func (f *Feed) processMessageQueue() {
+	for {
+		f.waitingSignal.L.Lock()
+		f.waitingSignal.Wait()
+		f.waitingSignal.L.Unlock()
+		newMsgs := []*SignedMessage{}
+		err := f.store.db.Update(func(tx *bolt.Tx) error {
+			f.waitingLock.Lock()
+			f.SeqLock.Lock()
+			defer func() {
+				f.SeqLock.Unlock()
+				f.waitingLock.Unlock()
+			}()
+			for {
+				m, ok := f.waiting[f.LatestSeq+1]
+				delete(f.waiting, f.LatestSeq+1)
+				if !ok {
+					break
+				}
 
-	f.SeqLock.Unlock()
-	fmt.Print("*")
-	f.Topic.Send <- m
+				if m.Author != f.ID {
+					continue
+				}
+				if f.store.Get(nil, m.Key()) != nil {
+					continue
+				}
+				err := m.Verify(tx, f)
+				if err != nil {
+					//fmt.Println(err)
+					fmt.Print("-")
+					return err
+				}
+				err = f.addMessage(tx, m)
+				if err != nil {
+					fmt.Println("Bolt: ", err)
+					return err
+				}
+
+				f.LatestSeq = m.Sequence
+				fmt.Print("*")
+				newMsgs = append(newMsgs, m)
+			}
+			return nil
+		})
+		if err != nil {
+			continue
+		}
+		for _, m := range newMsgs {
+			f.Topic.Send <- m
+		}
+	}
+}
+
+func (f *Feed) addMessage(tx *bolt.Tx, m *SignedMessage) error {
+	FeedsBucket, err := tx.CreateBucketIfNotExists([]byte("feeds"))
+	if err != nil {
+		return err
+	}
+	FeedBucket, err := FeedsBucket.CreateBucketIfNotExists(f.ID.DBKey())
+	if err != nil {
+		return err
+	}
+	FeedLogBucket, err := FeedBucket.CreateBucketIfNotExists([]byte("log"))
+	if err != nil {
+		return err
+	}
+	FeedLogBucket.FillPercent = 1
+	buf := m.Compress()
+	err = FeedLogBucket.Put(itob(m.Sequence), buf)
+	if err != nil {
+		return err
+	}
+	LogBucket, err := tx.CreateBucketIfNotExists([]byte("log"))
+	if err != nil {
+		return err
+	}
+	LogBucket.FillPercent = 1
+	seq, err := LogBucket.NextSequence()
+	if err != nil {
+		return err
+	}
+	err = LogBucket.Put(itob(int(seq)), m.Key().DBKey())
+	if err != nil {
+		return err
+	}
+	PointerBucket, err := tx.CreateBucketIfNotExists([]byte("pointer"))
+	if err != nil {
+		return err
+	}
+	pointer := Pointer{Sequence: m.Sequence, LogKey: int(seq), Author: m.Author.DBKey()}
+	buf = pointer.Marshal()
+	err = PointerBucket.Put(m.Key().DBKey(), buf)
+	if err != nil {
+		return err
+	}
+	for module, hook := range AddMessageHooks {
+		err = hook(m, tx)
+		if err != nil {
+			return fmt.Errorf("Bolt %s hook: %s", module, err)
+		}
+	}
 	return nil
 }
 
@@ -420,7 +455,7 @@ func (ds *DataStore) Rebuild(module string) {
 	log.Println("Reindexed", count, "messages")
 }
 
-func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*SignedMessage) {
+func (ds *DataStore) LatestCountFiltered(num int, start int, filter map[Ref]int) (msgs []*SignedMessage) {
 	ds.db.View(func(tx *bolt.Tx) error {
 		LogBucket := tx.Bucket([]byte("log"))
 		if LogBucket == nil {
@@ -429,6 +464,12 @@ func (ds *DataStore) LatestCountFiltered(num int, filter map[Ref]int) (msgs []*S
 		cur := LogBucket.Cursor()
 		_, val := cur.Last()
 		for len(msgs) < num {
+			for i := 0; i < start; i++ {
+				_, val = cur.Prev()
+				if val == nil {
+					break
+				}
+			}
 			if val == nil {
 				break
 			}
@@ -469,10 +510,17 @@ func (f *Feed) PublishMessage(body interface{}) error {
 		return fmt.Errorf("Cannot sign message without signing key for feed")
 	}
 	sm := m.Sign(signer)
-
+	c := f.Topic.Register(nil, true)
 	err := f.AddMessage(sm)
 	if err != nil {
 		return err
+	}
+
+	for newm := range c {
+		if newm.Key() == sm.Key() {
+			f.Topic.Unregister(c)
+			return nil
+		}
 	}
 
 	return nil
@@ -500,7 +548,7 @@ func (f *Feed) Latest() (m *SignedMessage) {
 	return
 }
 
-func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
+func (f *Feed) LatestCount(num int, start int) (msgs []*SignedMessage) {
 	f.store.db.View(func(tx *bolt.Tx) error {
 		FeedsBucket := tx.Bucket([]byte("feeds"))
 		if FeedsBucket == nil {
@@ -516,6 +564,9 @@ func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
 		}
 		cur := FeedLogBucket.Cursor()
 		_, val := cur.Last()
+        for i := 0; i < start; i++ {
+            _, val = cur.Prev()
+        }
 		for l1 := 0; l1 < num; l1++ {
 			if val == nil {
 				break
@@ -531,27 +582,28 @@ func (f *Feed) LatestCount(num int) (msgs []*SignedMessage) {
 	return
 }
 
-func (f *Feed) GetSeq(seq int) (m *SignedMessage) {
-	f.store.db.View(func(tx *bolt.Tx) error {
-		FeedsBucket := tx.Bucket([]byte("feeds"))
-		if FeedsBucket == nil {
-			return nil
-		}
-		FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
-		if FeedBucket == nil {
-			return nil
-		}
-		FeedLogBucket := FeedBucket.Bucket([]byte("log"))
-		if FeedLogBucket == nil {
-			return nil
-		}
-		val := FeedLogBucket.Get(itob(seq))
-		if val == nil {
-			return nil
-		}
-		m = DecompressMessage(val)
+func (f *Feed) GetSeq(tx *bolt.Tx, seq int) (m *SignedMessage) {
+	if tx == nil {
+		tx, _ = f.store.db.Begin(false)
+		defer tx.Rollback()
+	}
+	FeedsBucket := tx.Bucket([]byte("feeds"))
+	if FeedsBucket == nil {
 		return nil
-	})
+	}
+	FeedBucket := FeedsBucket.Bucket(f.ID.DBKey())
+	if FeedBucket == nil {
+		return nil
+	}
+	FeedLogBucket := FeedBucket.Bucket([]byte("log"))
+	if FeedLogBucket == nil {
+		return nil
+	}
+	val := FeedLogBucket.Get(itob(seq))
+	if val == nil {
+		return nil
+	}
+	m = DecompressMessage(val)
 	return m
 }
 

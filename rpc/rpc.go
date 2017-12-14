@@ -72,7 +72,7 @@ func ServeConn(datastore *ssb.DataStore, conn io.ReadWriteCloser) {
 			rtype := rval.Type()
 			for l1 := 0; l1 < rtype.NumIn(); l1++ {
 				pval := reflect.New(rtype.In(l1))
-				params = append(params, pval)
+				params = append(params, pval.Elem())
 				decodeparams = append(decodeparams, pval.Interface())
 			}
 			err := json.Unmarshal(req.Params, &decodeparams)
