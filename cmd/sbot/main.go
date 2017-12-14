@@ -57,7 +57,11 @@ func main() {
 		}
 	}
 
-	datastore, _ = ssb.OpenDataStore("feeds.db", keypair)
+	datastore, err = ssb.OpenDataStore("feeds.db", keypair)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer datastore.Close()
 
 	gossip.Replicate(datastore)
 
@@ -65,10 +69,19 @@ func main() {
 
 	//datastore.Rebuild("channels")
 
-	r.Register(&Gossip{datastore})
-	r.Register(&Feed{datastore})
+	err = r.Register(&Gossip{datastore})
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = r.Register(&Feed{datastore})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	l, _ := net.Listen("tcp", ":9822")
+	l, err := net.Listen("tcp", ":9822")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	r.Accept(l)
 
