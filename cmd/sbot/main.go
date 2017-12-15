@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-//    "os"
+    "os"
 
 	"github.com/andyleap/go-ssb"
 	_ "github.com/andyleap/go-ssb/channels"
@@ -25,10 +25,28 @@ var datastore *ssb.DataStore
 
 func main() {
 
-//    home := os.Getenv("HOME")
-//    err := os.Chdir(home+"/Library/Application Support/sbot")
-//    if err != nil {
-//        panic(err)
+    home := os.Getenv("HOME")
+    err := os.Chdir(home+"/Library/Application Support/sbot")
+    //for templates... these should go in an app bundle though
+    if err != nil {
+        panic(err)
+    }
+
+//    func open(url string) error {
+//        var cmd string
+//        var args []string
+//
+//        switch runtime.GOOS {
+//        case "windows":
+//            cmd = "cmd"
+//            args = []string{"/c", "start"}
+//        case "darwin":
+//            cmd = "open"
+//            default: // "linux", "freebsd", "openbsd", "netbsd"
+//            cmd = "xdg-open"
+//        }
+//        args = append(args, url)
+//        return exec.Command(cmd, args...).Start()
 //    }
 
 	keypair, err := secrethandshake.LoadSSBKeyPair("secret.json")
