@@ -7,17 +7,11 @@
 {{template "navbar.tpl"}}
 
 
-<form class="postingarea" action="/publish/post" method="post">
-<textarea name="text"></textarea><br>
-<input type="hidden" name="returnto" value="/">
-<input type="submit" value="Publish!!" class="btn btn-primary">
-</form>
-
-<br>
-
+<div class="main">
 {{range .Messages}}
 {{RenderContent . 1}}
 {{end}}
+</div>
 
 <div class="pagnum">
 <div class="page-nav">

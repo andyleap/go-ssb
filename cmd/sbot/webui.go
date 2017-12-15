@@ -179,7 +179,8 @@ func init() {
 			buf := &bytes.Buffer{}
 			tpl := ContentTemplates.Lookup(t + ".tpl")
 			if tpl == nil {
-				return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+				//return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+                return template.HTML("")
 			}
 
 			err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
@@ -203,7 +204,8 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 		}
 		tpl := ContentTemplates.Lookup(t + ".tpl")
 		if tpl == nil {
-			return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+			//return template.HTML("<!-- " + t + " --!><pre>" + string(m.Encode()) + "</pre>")
+            return template.HTML("")
 		}
 		buf := &bytes.Buffer{}
 		err := ContentTemplates.ExecuteTemplate(buf, t+".tpl", struct {
@@ -332,6 +334,10 @@ func PublishAbout(rw http.ResponseWriter, req *http.Request) {
 	}
 	datastore.GetFeed(datastore.PrimaryRef).PublishMessage(p)
 	http.Redirect(rw, req, "/profile", http.StatusSeeOther)
+}
+
+func Hidden(rw http.ResponseWriter, req *http.Request) {
+    return
 }
 
 func PublishFollow(rw http.ResponseWriter, req *http.Request) {

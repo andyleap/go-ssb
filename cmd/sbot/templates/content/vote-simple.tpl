@@ -1,1 +1,0 @@
-{{Avatar .Message.Author}}
