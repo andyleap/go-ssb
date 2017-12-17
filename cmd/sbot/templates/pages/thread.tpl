@@ -4,6 +4,7 @@
 </head>
 <body>
 <base target="_parent">
+<div class="main">
 <div class="container">
 
 <div class="well">
@@ -40,6 +41,7 @@
 
 <a class="mylink" href="/">Go home</a>
 
+</div>
 </div>
 </body>
 </html>

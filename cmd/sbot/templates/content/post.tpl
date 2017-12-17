@@ -14,12 +14,7 @@
 <a class="voteman" href="/post?id={{.Message.Key}}">{{$votes := GetVotes .Message.Key}}{{len $votes}} Votes
 <div class="hidebox">
 
-
-
-figure out how to put voters here
-
-
-
+<!--figure out how to put voters here-->
 
 </div></a>
 

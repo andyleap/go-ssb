@@ -1,10 +1,10 @@
 <nav class="navbar">
 
-<img class="logo" src="static/logo.svg">
+<!--img class="logo" src="static/logo.svg"-->
 <form class="postingarea" action="/publish/post" method="post">
+<input type="submit" value=" > " class="btn btn-primary">
 <textarea name="text"></textarea><br>
 <input type="hidden" name="returnto" value="/">
-<!--input type="submit" value="Publish!!" class="btn btn-primary"-->
 </form>
 
 <div class="navbottom">

@@ -3,6 +3,7 @@
 {{template "header.tpl"}}
 </head>
 <body>
+<div class="main">
 <div class="container">
 
 {{template "navbar.tpl"}}
@@ -22,6 +23,7 @@
 <input type="file" name="upload" class="form-control" placeholder="picture">
 <input type="submit" value="Update" class="btn btn-primary">
 </form>
+</div>
 </div>
 </div>
 </body>

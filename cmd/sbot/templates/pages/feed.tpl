@@ -3,6 +3,7 @@
 {{template "header.tpl"}}
 </head>
 <body>
+<div class="main">
 <div class="container">
 {{template "navbar.tpl"}}
 
@@ -53,6 +54,7 @@
 </div>
 </div>
 
+</div>
 </div>
 </body>
 </html>

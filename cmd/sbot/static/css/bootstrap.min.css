@@ -30,7 +30,8 @@ a:hover {
     color:black;
 }
 .main {
-    margin-left:100;
+    #margin-left:100;
+    margin:auto;
     margin-top:106;
     width:700;
 }
@@ -76,7 +77,7 @@ img {
     bottom:0;
     width:100%;
     height:46;
-    padding-left:110;
+    padding-left:20%;
     padding-right:110;
     padding-top:15;
     text-align:left;
@@ -107,11 +108,38 @@ img {
 .search-input:hover {
     background-color:#fff;
 }
+.postingarea {
+    background:#f4f4f4;
+    border-radius:6;
+}
+input {
+    float:right;
+    border:none;
+    background:#f4f4f4;
+    height:40;
+    border-radius:6;
+    font-size:200%;
+    color:#888;
+}
+input:focus {
+    outline: none;
+    box-shadow:none;
+}
 textarea {
     font: inherit;
-    width: 100%;
     border:0px;
     background:#f4f4f4;
+    resize:none;
+    color:#666;
+    padding:5;
+    font-size:125%;
+    width:600px;
+    height:40;
+    margin-top:0px;
+    background:#f4f4f4;
+    border-radius:6;
+    margin-left:auto;
+    margin-right:auto;
 }
 blockquote {
     color:#444;
@@ -126,8 +154,12 @@ blockquote {
     margin:20px;
     padding-left:10px;
     padding-right:10px;
-    background:white;
     color:#222;
+}
+.pname {
+    color:black;
+    font-weight:bold;
+    font-size:110%;
 }
 .postblock {
     border-top: 1px solid #EEE;
@@ -138,8 +170,24 @@ blockquote {
     padding-top:0;
     width:100%;
 }
+.postblock:hover {
+    background-color:#EEE;
+}
 .votes {
     text-align:right;
+}
+.voter {
+    height:20;
+    font-size:120%;
+    padding:0;
+    margins:0;
+    background-color:inherit;
+}
+.votebutton {
+    float:right;
+}
+.voter:hover {
+    color:black;
 }
 .voteman:hover > .hidebox {
     display:block;
@@ -164,12 +212,6 @@ blockquote {
     float:left;
     font-size:80%;
     padding-left:14px;
-}
-.postingarea {
-    width:650px;
-    height:40px;
-    margin:auto;
-    background:#f4f4f4;
 }
 .vote {
     display:inline-block;
