@@ -19,6 +19,21 @@
 {{RenderContent . 1}}
 {{end}}
 
+
+<div class="bigbutton">
+<a class="bigbutton" href="#addingpub">
++ pub
+</a>
+</div>
+
+<a href="#main" class="pubwindow" id="addingpub">
+<div class="exit">&#10005</div>
+<iframe src="/addpub" class="pubforward" id="floater">
+Your browser doesn't support iframes
+</iframe>
+</a>
+
+
 <div class="pagnum">
 <div class="page-nav">
 {{if not (eq .PageStr "1")}}<form .class="nav" action="/?page={{.PrevPage}}" method="post">

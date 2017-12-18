@@ -268,6 +268,7 @@ func RegisterWebui() {
 	http.HandleFunc("/profile", Profile)
 
 	http.HandleFunc("/admin", Admin)
+	http.HandleFunc("/addpub", AddPub)
 	http.HandleFunc("/rebuild", Rebuild)
 
 	http.HandleFunc("/blob", Blob)
@@ -486,6 +487,15 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
+}
+
+func AddPub(rw http.ResponseWriter, req *http.Request) {
+    err := PageTemplates.ExecuteTemplate(rw, "addpub.tpl", struct {
+    }{})
+    //does it matter that nothing is there?
+    if err != nil {
+        log.Println(err)
+    }
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
