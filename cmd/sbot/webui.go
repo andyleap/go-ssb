@@ -717,13 +717,33 @@ func Channel(rw http.ResponseWriter, req *http.Request) {
 		Index(rw, req)
 		return
 	}
-	messages := channels.GetChannelLatest(datastore, channel, 100)
-	err := PageTemplates.ExecuteTemplate(rw, "channel.tpl", struct {
+	pageStr := req.FormValue("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
+	messages := channels.GetChannelLatest(datastore, channel, int(p), int(p - 24))
+    //set back to 100 posts per page^^
+    //this can be changed to support page loads with arbitrary slices from channel posts bucket
+    //that zero is the start value
+	err = PageTemplates.ExecuteTemplate(rw, "channel.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Channel  string
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
 		channel,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
