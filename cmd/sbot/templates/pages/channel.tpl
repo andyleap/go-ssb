@@ -24,6 +24,21 @@
 {{RenderContent . 1}}
 </div>
 {{end}}
+
+
+<div class="pagnum">
+<div class="page-nav">
+{{if not (eq .PageStr "1")}}<form .class="nav" action="/?page={{.PrevPage}}" method="post">
+<button>less</button>
+</form>
+{{else}}
+{{end}}
+<form .class="nav" action="/?page={{.NextPage}}" method="post">
+<button>more</button>
+</form>
+</div>
+</div>
+
 </div>
 </body>
 </html>
