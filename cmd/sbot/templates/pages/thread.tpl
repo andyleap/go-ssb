@@ -7,13 +7,9 @@
 <div class="main">
 <div class="container">
 
-<div class="well">
 {{RenderContent .Root 0}}
-</div>
 {{range .Messages}}
-<div class="well">
 {{RenderContent . 0}}
-</div>
 {{end}}
 
 

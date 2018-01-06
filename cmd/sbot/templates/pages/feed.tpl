@@ -4,7 +4,6 @@
 </head>
 <body>
 <div class="main">
-<div class="container">
 {{template "navbar.tpl"}}
 
 <div class="row">
@@ -41,20 +40,17 @@
 {{end}}
 </div>
 
-<div class="pagnum">
 <div class="page-nav">
 {{if not (eq .PageStr "1")}}<form .class="nav" action="/feed?id={{.Ref}}&page={{.PrevPage}}" method="post">
-<button>less</button>
+<button class="mylink">less</button>
 </form>
 {{else}}
 {{end}}
 <form .class="nav" action="/feed?id={{.Ref}}&page={{.NextPage}}" method="post">
-<button>more</button>
+<button class="mylink">more</button>
 </form>
 </div>
-</div>
 
-</div>
 </div>
 </body>
 </html>
