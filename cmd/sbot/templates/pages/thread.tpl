@@ -4,7 +4,7 @@
 </head>
 <body>
 <base target="_parent">
-<div class="main">
+<div class="thread">
 <div class="container">
 
 {{RenderContent .Root 0}}
