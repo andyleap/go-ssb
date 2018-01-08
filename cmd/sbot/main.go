@@ -25,12 +25,6 @@ var datastore *ssb.DataStore
 
 func main() {
 
-//    home := os.Getenv("HOME")
-//    err := os.Chdir(home+"/Library/Application Support/sbot")
-//    if err != nil {
-//        panic(err)
-//    }
-
 	keypair, err := secrethandshake.LoadSSBKeyPair("secret.json")
 	if err != nil {
 		keypair, err = secrethandshake.GenEdKeyPair(rand.Reader)
