@@ -9,11 +9,14 @@
 
 <div class="well">
 {{if .Profile}}
-{{if .Profile.Image}}<img src="/blob?id={{urlquery .Profile.Image.Link}}" width="100" height="100"><br>{{end}}
+{{if .Profile.Image}}<img class="avatarwell" src="/blob?id={{urlquery .Profile.Image.Link}}"><br>{{end}}
+</div>
+<div>
 <b>{{.Profile.Name}}</b>
 {{else}}
 {{.Ref}}
 {{end}}
+{{.Ref}}
 </div>
 
 <div>
@@ -24,5 +27,12 @@
 </form>
 </div>
 </div>
+
+<div>
+{{range .Messages}}
+{{RenderContent . 1}}
+{{end}}
+</div>
+
 </body>
 </html>

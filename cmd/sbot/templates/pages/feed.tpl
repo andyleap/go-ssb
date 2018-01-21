@@ -9,7 +9,7 @@
 <div class="row">
 <div class="col-sm-6 col-sm-offset-2">
 {{if .Profile}}
-{{if .Profile.Image}}<img class="avatarwell" src="/blob?id={{urlquery .Profile.Image.Link}}" width="100" height="100">{{end}}
+{{if .Profile.Image}}<img class="avatarwell" src="/blob?id={{urlquery .Profile.Image.Link}}">{{end}}
 <div class="about"><b>@{{.Profile.Name}}</b><p class="ref">{{.Ref}}</p><form action="/publish/follow" method="post">
 <input type="hidden" name="feed" value="{{.Ref}}">
 <input type="hidden" name="returnto" value="/feed?id={{urlquery .Ref}}">
