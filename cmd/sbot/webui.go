@@ -552,7 +552,7 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
     }
     nextPage := strconv.Itoa(i + 1)
     prevPage := strconv.Itoa(i - 1)
-    p := i * 25
+    p := (i * 25) - 25
 
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
