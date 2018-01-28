@@ -563,6 +563,9 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
     f := datastore.GetFeed(feed)
     messages = f.LatestCount(25, p)
 //	messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+
+    follows := graph.GetFollows(datastore, feed, 1)
+
 	err = PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Profile  *social.About
@@ -570,6 +573,7 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
         PageStr string
         NextPage string
         PrevPage string
+		Follows  map[ssb.Ref]int
 	}{
 		messages,
 		about,
@@ -577,6 +581,7 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
         pageStr,
         nextPage,
         prevPage,
+        follows,
 	})
 	if err != nil {
 		log.Println(err)

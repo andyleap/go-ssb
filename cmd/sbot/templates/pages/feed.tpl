@@ -30,6 +30,13 @@
 </div>
 </div>
 
+<p>
+<b>Following:</b>
+{{range $k, $v := .Follows}}
+<a href="/feed?id={{$k}}">{{$k}}</a>
+{{end}}
+</p>
+
 <br>
 </div>
 
