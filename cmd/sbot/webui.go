@@ -196,6 +196,25 @@ func init() {
 }
 
 var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
+    "Avatar": func(ref ssb.Ref) template.HTML {
+        if ref.Type != ssb.RefFeed {
+            return ""
+        }
+        var a *social.About
+        datastore.DB().View(func(tx *bolt.Tx) error {
+            a = social.GetAbout(tx, ref)
+            return nil
+        })
+        buf := &bytes.Buffer{}
+        err := ContentTemplates.ExecuteTemplate(buf, "follow.tpl", struct {
+            About *social.About
+            Ref   ssb.Ref
+        }{a, ref})
+        if err != nil {
+            log.Println(err)
+        }
+        return template.HTML(buf.String())
+    },
 	"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 		t, md := m.DecodeMessage()
 		if t == "" {

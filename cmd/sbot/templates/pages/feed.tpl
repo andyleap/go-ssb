@@ -31,9 +31,8 @@
 </div>
 
 <p>
-<b>Following:</b>
 {{range $k, $v := .Follows}}
-<a href="/feed?id={{$k}}">{{$k}}</a>
+<a href="/feed?id={{$k}}">{{Avatar $k}}</a>
 {{end}}
 </p>
 
