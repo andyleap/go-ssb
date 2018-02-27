@@ -539,7 +539,7 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 		f := datastore.GetFeed(datastore.PrimaryRef)
 		messages = f.LatestCount(int(p), 0)
 	} else {
-		messages = datastore.LatestCountFiltered(int(p), int(p - 24), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
+		messages = datastore.LatestCountFiltered(int(p), int(p - 25), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
 	}
 	err = PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
