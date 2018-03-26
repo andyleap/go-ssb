@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"cryptoscope.co/go/secretstream"
+	"cryptoscope.co/go/secretstream/secrethandshake"
 	"github.com/cryptix/go-muxrpc"
-	"github.com/cryptix/secretstream"
-	"github.com/cryptix/secretstream/secrethandshake"
 	"github.com/go-kit/kit/log"
 )
 

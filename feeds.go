@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"cryptoscope.co/go/secretstream/secrethandshake"
 	"github.com/boltdb/bolt"
-	"github.com/cryptix/secretstream/secrethandshake"
 	"golang.org/x/crypto/ed25519"
 )
 
@@ -564,9 +564,9 @@ func (f *Feed) LatestCount(num int, start int) (msgs []*SignedMessage) {
 		}
 		cur := FeedLogBucket.Cursor()
 		_, val := cur.Last()
-        for i := 0; i < start; i++ {
-            _, val = cur.Prev()
-        }
+		for i := 0; i < start; i++ {
+			_, val = cur.Prev()
+		}
 		for l1 := 0; l1 < num; l1++ {
 			if val == nil {
 				break
