@@ -22,9 +22,9 @@ type DNS struct {
 }
 
 func init() {
-	ssb.MessageTypes["ssb-dns"] = func() interface{} { return &DNS{} }
+	ssb.MessageTypes["ssb-dns"] = func(_ ssb.MessageBody) interface{} { return &DNS{} }
 	ssb.RebuildClearHooks["dns"] = func(tx *bolt.Tx) error {
-		tx.DeleteBucket([]byte("dns"))
+		return tx.DeleteBucket([]byte("dns"))
 	}
 	ssb.AddMessageHooks["dns"] = func(m *ssb.SignedMessage, tx *bolt.Tx) error {
 		_, mb := m.DecodeMessage()
@@ -34,7 +34,7 @@ func init() {
 				return err
 			}
 			buf, _ := json.Marshal(mbr)
-			err = PubBucket.Put([]byte(m.Key()), buf)
+			err = PubBucket.Put(m.Key().DBKey(), buf)
 			if err != nil {
 				return err
 			}
