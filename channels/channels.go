@@ -82,12 +82,12 @@ func GetChannelLatest(ds *ssb.DataStore, channel string, num int, start int) (ms
 		}
 		cursor := timeBucket.Cursor()
 		_, v := cursor.Last()
-		for i := 0; i < start; i++ {
-			_, v = cursor.Prev()
-			if v == nil {
-				break
-			}
-		}
+        for i := 0; i < start; i++ {
+            _, v = cursor.Prev()
+            if v == nil {
+                break
+            }
+        }
 		for l1 := 0; l1 < num; l1++ {
 			if v == nil {
 				break

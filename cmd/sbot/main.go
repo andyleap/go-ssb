@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	//    "os"
+//    "os"
 
 	"github.com/andyleap/go-ssb"
 	_ "github.com/andyleap/go-ssb/channels"
@@ -16,7 +16,7 @@ import (
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/social"
 
-	"cryptoscope.co/go/secretstream/secrethandshake"
+	"github.com/cryptix/secretstream/secrethandshake"
 
 	r "net/rpc"
 )
