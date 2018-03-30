@@ -16,8 +16,8 @@ import (
 	"github.com/andyleap/muxrpc"
 	"github.com/andyleap/muxrpc/codec"
 
-	"github.com/cryptix/secretstream"
-	"github.com/cryptix/secretstream/secrethandshake"
+	"cryptoscope.co/go/secretstream"
+	"cryptoscope.co/go/secretstream/secrethandshake"
 )
 
 type Pub struct {
