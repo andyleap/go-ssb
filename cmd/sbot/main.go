@@ -16,7 +16,7 @@ import (
 	"github.com/andyleap/go-ssb/graph"
 	"github.com/andyleap/go-ssb/social"
 
-	"cryptoscope.co/go/secretstream/secrethandshake"
+	"github.com/cryptix/secretstream/secrethandshake"
 
 	r "net/rpc"
 )
