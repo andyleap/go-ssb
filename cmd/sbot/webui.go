@@ -196,25 +196,25 @@ func init() {
 }
 
 var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
-	"Avatar": func(ref ssb.Ref) template.HTML {
-		if ref.Type != ssb.RefFeed {
-			return ""
-		}
-		var a *social.About
-		datastore.DB().View(func(tx *bolt.Tx) error {
-			a = social.GetAbout(tx, ref)
-			return nil
-		})
-		buf := &bytes.Buffer{}
-		err := ContentTemplates.ExecuteTemplate(buf, "follow.tpl", struct {
-			About *social.About
-			Ref   ssb.Ref
-		}{a, ref})
-		if err != nil {
-			log.Println(err)
-		}
-		return template.HTML(buf.String())
-	},
+    "Avatar": func(ref ssb.Ref) template.HTML {
+        if ref.Type != ssb.RefFeed {
+            return ""
+        }
+        var a *social.About
+        datastore.DB().View(func(tx *bolt.Tx) error {
+            a = social.GetAbout(tx, ref)
+            return nil
+        })
+        buf := &bytes.Buffer{}
+        err := ContentTemplates.ExecuteTemplate(buf, "follow.tpl", struct {
+            About *social.About
+            Ref   ssb.Ref
+        }{a, ref})
+        if err != nil {
+            log.Println(err)
+        }
+        return template.HTML(buf.String())
+    },
 	"RenderContent": func(m *ssb.SignedMessage, levels int) template.HTML {
 		t, md := m.DecodeMessage()
 		if t == "" {
@@ -327,7 +327,7 @@ func PublishPost(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, req.FormValue("returnto"), http.StatusSeeOther)
 }
 
-func PublishVote(rw http.ResponseWriter, req *http.Request) {
+func PublishVote (rw http.ResponseWriter, req *http.Request) {
 	p := &social.Vote{}
 	p.Type = "vote"
 	p.Vote.Link = ssb.ParseRef(req.FormValue("link"))
@@ -509,12 +509,12 @@ func Admin(rw http.ResponseWriter, req *http.Request) {
 }
 
 func AddPub(rw http.ResponseWriter, req *http.Request) {
-	err := PageTemplates.ExecuteTemplate(rw, "addpub.tpl", struct {
-	}{})
-	//does it matter that nothing is there?
-	if err != nil {
-		log.Println(err)
-	}
+    err := PageTemplates.ExecuteTemplate(rw, "addpub.tpl", struct {
+    }{})
+    //does it matter that nothing is there?
+    if err != nil {
+        log.Println(err)
+    }
 }
 
 func Index(rw http.ResponseWriter, req *http.Request) {
@@ -522,13 +522,13 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 	if pageStr == "" {
 		pageStr = "1"
 	}
-	i, err := strconv.Atoi(pageStr)
-	if err != nil {
-		log.Println(err)
-	}
-	nextPage := strconv.Itoa(i + 1)
-	prevPage := strconv.Itoa(i - 1)
-	p := i * 25
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
 	distStr := req.FormValue("dist")
 	if distStr == "" {
 		distStr = "2"
@@ -539,18 +539,18 @@ func Index(rw http.ResponseWriter, req *http.Request) {
 		f := datastore.GetFeed(datastore.PrimaryRef)
 		messages = f.LatestCount(int(p), 0)
 	} else {
-		messages = datastore.LatestCountFiltered(int(p), int(p-25), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
+		messages = datastore.LatestCountFiltered(int(p), int(p - 25), graph.GetFollows(datastore, datastore.PrimaryRef, int(dist)))
 	}
 	err = PageTemplates.ExecuteTemplate(rw, "index.tpl", struct {
 		Messages []*ssb.SignedMessage
-		PageStr  string
-		NextPage string
-		PrevPage string
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
-		pageStr,
-		nextPage,
-		prevPage,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
@@ -565,13 +565,13 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 	if pageStr == "" {
 		pageStr = "1"
 	}
-	i, err := strconv.Atoi(pageStr)
-	if err != nil {
-		log.Println(err)
-	}
-	nextPage := strconv.Itoa(i + 1)
-	prevPage := strconv.Itoa(i - 1)
-	p := (i * 25) - 25
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := (i * 25) - 25
 
 	var about *social.About
 	datastore.DB().View(func(tx *bolt.Tx) error {
@@ -579,28 +579,28 @@ func FeedPage(rw http.ResponseWriter, req *http.Request) {
 		return nil
 	})
 	var messages []*ssb.SignedMessage
-	f := datastore.GetFeed(feed)
-	messages = f.LatestCount(25, p)
-	//	messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
+    f := datastore.GetFeed(feed)
+    messages = f.LatestCount(25, p)
+//	messages = datastore.LatestCountFiltered(25, 0, graph.GetFollows(datastore, feed, int(dist)))
 
-	follows := graph.GetFollows(datastore, feed, 1)
+    follows := graph.GetFollows(datastore, feed, 1)
 
 	err = PageTemplates.ExecuteTemplate(rw, "feed.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Profile  *social.About
 		Ref      ssb.Ref
-		PageStr  string
-		NextPage string
-		PrevPage string
+        PageStr string
+        NextPage string
+        PrevPage string
 		Follows  map[ssb.Ref]int
 	}{
 		messages,
 		about,
 		feed,
-		pageStr,
-		nextPage,
-		prevPage,
-		follows,
+        pageStr,
+        nextPage,
+        prevPage,
+        follows,
 	})
 	if err != nil {
 		log.Println(err)
@@ -669,7 +669,7 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	_, content := message.DecodeMessage()
-	raw := message.Encode()
+    raw := message.Encode()
 	p, ok := content.(*social.Post)
 	if !ok {
 		PageTemplates.ExecuteTemplate(rw, "message.tpl", struct {
@@ -693,7 +693,7 @@ func Post(rw http.ResponseWriter, req *http.Request) {
 		message,
 		p,
 		votes,
-		raw,
+        raw,
 	})
 	if err != nil {
 		log.Println(err)
@@ -745,29 +745,29 @@ func Channel(rw http.ResponseWriter, req *http.Request) {
 	if pageStr == "" {
 		pageStr = "1"
 	}
-	i, err := strconv.Atoi(pageStr)
-	if err != nil {
-		log.Println(err)
-	}
-	nextPage := strconv.Itoa(i + 1)
-	prevPage := strconv.Itoa(i - 1)
-	p := i * 25
-	messages := channels.GetChannelLatest(datastore, channel, int(p), int(p-24))
-	//set back to 100 posts per page^^
-	//this can be changed to support page loads with arbitrary slices from channel posts bucket
-	//that zero is the start value
+    i, err := strconv.Atoi(pageStr)
+    if err != nil {
+        log.Println(err)
+    }
+    nextPage := strconv.Itoa(i + 1)
+    prevPage := strconv.Itoa(i - 1)
+    p := i * 25
+	messages := channels.GetChannelLatest(datastore, channel, int(p), int(p - 24))
+    //set back to 100 posts per page^^
+    //this can be changed to support page loads with arbitrary slices from channel posts bucket
+    //that zero is the start value
 	err = PageTemplates.ExecuteTemplate(rw, "channel.tpl", struct {
 		Messages []*ssb.SignedMessage
 		Channel  string
-		PageStr  string
-		NextPage string
-		PrevPage string
+        PageStr string
+        NextPage string
+        PrevPage string
 	}{
 		messages,
 		channel,
-		pageStr,
-		nextPage,
-		prevPage,
+        pageStr,
+        nextPage,
+        prevPage,
 	})
 	if err != nil {
 		log.Println(err)
