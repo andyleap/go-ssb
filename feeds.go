@@ -317,6 +317,7 @@ func (f *Feed) processMessageQueue() {
 				err := m.Verify(tx, f)
 				if err != nil {
 					//fmt.Println(err)
+					//fmt.Println((string(m.Message.Content)))
 					fmt.Print("-")
 					return err
 				}

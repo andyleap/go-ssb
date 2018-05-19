@@ -190,7 +190,7 @@ func init() {
 			if err != nil {
 				log.Println(err)
 			}
-			return template.HTML("<!-- " + t + " --!>" + buf.String())
+			return template.HTML(buf.String())
 		},
 	}).ParseGlob("templates/content/*.tpl"))
 }
@@ -233,7 +233,7 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 		if err != nil {
 			log.Println(err)
 		}
-		return template.HTML("<!-- " + t + " --!>" + buf.String())
+		return template.HTML(buf.String())
 	},
 	"HasBlob": func(ref ssb.Ref) bool {
 		return blobs.Get(datastore).Has(ref)
@@ -249,7 +249,7 @@ var PageTemplates = template.Must(template.New("index").Funcs(template.FuncMap{
 		if err != nil {
 			log.Println(err)
 		}
-		return template.HTML("<!-- " + t + " --!>" + buf.String())
+		return template.HTML(t + buf.String())
 	},
 	"Decode": func(m *ssb.SignedMessage) interface{} {
 		_, mb := m.DecodeMessage()

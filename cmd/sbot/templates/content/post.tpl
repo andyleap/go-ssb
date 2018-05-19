@@ -16,7 +16,6 @@
 
 
 
-figure out how to put voters here
 
 
 
