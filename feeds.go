@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"cryptoscope.co/go/secretstream/secrethandshake"
+	"go.cryptoscope.co/secretstream/secrethandshake"
 	"github.com/boltdb/bolt"
 	"golang.org/x/crypto/ed25519"
 )
