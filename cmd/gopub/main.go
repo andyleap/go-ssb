@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"cryptoscope.co/go/secretstream/secrethandshake"
+	"go.cryptoscope.co/secretstream/secrethandshake"
 	"github.com/andyleap/go-ssb"
 	"github.com/andyleap/go-ssb/gossip"
 )
